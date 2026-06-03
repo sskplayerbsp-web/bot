@@ -1,14 +1,8 @@
 const bedrock = require('bedrock-protocol');
-const express = require('express'); // Import the web server library
-// FIX FOR RENDER: Fake web page to stop the "No open HTTP ports" error
-const express = require('express');
-const app = express();
-const PORT = process.env.PORT || 3000;
-app.get('/', (req, res) => res.send('Bot is Alive!'));
-app.listen(PORT, () => console.log(`[Web Server] Listening on port ${PORT}`));
+const express = require('express'); 
 
 // CONFIGURATION
-const MINEFORT_LOBBY = '://minefort.com';
+const MINEFORT_LOBBY = 'play.minefort.com'; // Fixed: Clean domain name without ://
 const BEDROCK_PORT = 19132;
 const MICROSOFT_EMAIL = 'shravan.sktn20@gmail.com'; 
 const YOUR_SERVER_NAME = 'sleepyempire'; 
@@ -49,7 +43,11 @@ function startBot() {
     });
 }
 
-// Start the Minecraft Bo    t
+// Start the Minecraft Bot
 startBot();
 
-
+// Express Web Server Setup (Fixed: Duplicate declaration removed)
+const app = express();
+const PORT = process.env.PORT || 3000;
+app.get('/', (req, res) => res.send('Bot is Alive!'));
+app.listen(PORT, () => console.log(`[Web Server] Listening on port ${PORT}`));

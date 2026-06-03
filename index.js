@@ -1,7 +1,7 @@
 const bedrock = require('bedrock-protocol');
 
 // CONFIGURATION
-const MINEFORT_LOBBY = '://minefort.com';
+const MINEFORT_LOBBY = 'play.minefort.com';
 const BEDROCK_PORT = 19132;
 const MICROSOFT_EMAIL = 'shravan.sktn20@gmail.com'; // Put your email here
 const YOUR_SERVER_NAME = 'sleepyempire'; // Put your server name here

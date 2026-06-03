@@ -6,6 +6,7 @@
     "bedrock-protocol": "^3.25.0"
   },
   "scripts": {
+    "build": "echo 'No build required'",
     "start": "node bedrock_bot.js"
   }
 }

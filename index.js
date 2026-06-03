@@ -4,7 +4,7 @@ const express = require('express');
 // CONFIGURATION
 const MINEFORT_LOBBY = 'play.minefort.com'; // Fixed: Clean domain name without ://
 const BEDROCK_PORT = 19132;
-const MICROSOFT_EMAIL = 'shravan.sktn20@gmail.com'; 
+const MICROSOFT_EMAIL = 'sleepyempire.minefort.com'; 
 const YOUR_SERVER_NAME = 'sleepyempire'; 
 
 function startBot() {

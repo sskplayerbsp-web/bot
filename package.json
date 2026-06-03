@@ -1,12 +1,11 @@
 {
-  "name": "minefort-bot",
+  "name": "minefort-bedrock-keeper",
   "version": "1.0.0",
-  "main": "index.js",
+  "main": "bedrock_bot.js",
   "dependencies": {
-    "mineflayer": "^4.20.0",
-    "minecraft-protocol": "^1.47.0"
+    "bedrock-protocol": "^3.25.0"
   },
   "scripts": {
-    "start": "node index.js"
+    "start": "node bedrock_bot.js"
   }
 }

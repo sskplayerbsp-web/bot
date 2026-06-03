@@ -3,7 +3,8 @@
   "version": "1.0.0",
   "main": "index.js",
   "dependencies": {
-    "mineflayer": "^4.20.0"
+    "mineflayer": "^4.20.0",
+    "minecraft-protocol": "^1.47.0"
   },
   "scripts": {
     "start": "node index.js"

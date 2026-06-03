@@ -6,7 +6,7 @@ function createBot() {
     const bot = mineflayer.createBot({
         host: 'sleepyempire.minefort.com', // Change to your Minefort IP
         port: 25565,                         // Change to your Minefort Port if different
-        username: 'Minefort_247_Bot'
+        username: 'Minefort_247_Bot',
         version: '1.26.1'
     });
 

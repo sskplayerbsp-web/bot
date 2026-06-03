@@ -1,5 +1,11 @@
 const bedrock = require('bedrock-protocol');
 const express = require('express'); // Import the web server library
+// FIX FOR RENDER: Fake web page to stop the "No open HTTP ports" error
+const express = require('express');
+const app = express();
+const PORT = process.env.PORT || 3000;
+app.get('/', (req, res) => res.send('Bot is Alive!'));
+app.listen(PORT, () => console.log(`[Web Server] Listening on port ${PORT}`));
 
 // CONFIGURATION
 const MINEFORT_LOBBY = '://minefort.com';
@@ -43,11 +49,9 @@ function startBot() {
     });
 }
 
-// Start the Minecraft Bot
+// Start the Minecraft Bo    t
 startBot();
 
-// FIX FOR RENDER: Fake web page to stop the "No open HTTP ports" error
-const express = require('express');
 const app = express();
 const PORT = process.env.PORT || 3000;
 app.get('/', (req, res) => res.send('Bot is Alive!'));

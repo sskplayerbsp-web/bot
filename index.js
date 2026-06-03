@@ -1,10 +1,11 @@
 const bedrock = require('bedrock-protocol');
+const express = require('express'); // Import the web server library
 
 // CONFIGURATION
-const MINEFORT_LOBBY = 'play.minefort.com';
+const MINEFORT_LOBBY = '://minefort.com';
 const BEDROCK_PORT = 19132;
-const MICROSOFT_EMAIL = 'shravan.sktn20@gmail.com'; // Put your email here
-const YOUR_SERVER_NAME = 'sleepyempire'; // Put your server name here
+const MICROSOFT_EMAIL = 'shravan.sktn20@gmail.com'; 
+const YOUR_SERVER_NAME = 'sleepyempire'; 
 
 function startBot() {
     console.log(`Connecting to ${MINEFORT_LOBBY}:${BEDROCK_PORT}...`);
@@ -14,7 +15,7 @@ function startBot() {
         port: BEDROCK_PORT,
         username: MICROSOFT_EMAIL,
         offline: false,
-        skipPing: true // Bypasses the initial ping check to avoid RakTimeout errors
+        skipPing: true 
     });
 
     client.on('spawn', () => {
@@ -32,7 +33,6 @@ function startBot() {
         }, 5000);
     });
 
-    // CRITICAL: Prevents the script from crashing when network errors happen
     client.on('error', (err) => {
         console.error('[Bot Error Handled]:', err.message);
     });
@@ -43,4 +43,11 @@ function startBot() {
     });
 }
 
+// Start the Minecraft Bot
 startBot();
+
+// FIX FOR RENDER: Fake web page to stop the "No open HTTP ports" error
+const app = express();
+const PORT = process.env.PORT || 3000;
+app.get('/', (req, res) => res.send('Bot is Alive!'));
+app.listen(PORT, () => console.log(`[Web Server] Listening on port ${PORT}`));

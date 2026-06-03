@@ -4,7 +4,7 @@ const http = require('http');
 // 1. Create the Minecraft Bot Connection
 function createBot() {
     const bot = mineflayer.createBot({
-        host: 'YOUR_SERVER_://minefort.com', // Change to your Minefort IP
+        host: 'sleepyempire.minefort.com', // Change to your Minefort IP
         port: 25565,                         // Change to your Minefort Port if different
         username: 'Minefort_247_Bot'
     });

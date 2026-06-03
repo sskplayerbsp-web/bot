@@ -1,34 +1,49 @@
 const mineflayer = require('mineflayer');
 const http = require('http');
 
-// 1. Create the Minecraft Bot Connection
 function createBot() {
     const bot = mineflayer.createBot({
-        host: 'sleepyempire.minefort.com', // Change to your Minefort IP
-        port: 25565,                         // Change to your Minefort Port if different
-        username: 'Minefort_247_Bot',
+        // 1. We connect directly to the main Minefort network hub
+        host: 'play.minefort.com', 
+        port: 25565,                         
+        username: 'Minefort_247_Bot'
     });
 
-    bot.on('login', () => console.log('Bot successfully joined the server!'));
-    bot.on('spawn', () => bot.chat('/gamemode creative')); // Keeps bot safe if OPed
+    bot.on('login', () => {
+        console.log('Connected to Minefort Lobby! Sending jump request...');
+    });
 
-    // Anti-kick: Moves minorly or chats every 4 minutes to stay active
+    bot.on('spawn', () => {
+        // 2. Once the bot lands in the lobby, it will automatically run your join command
+        setTimeout(() => {
+            bot.chat('/join sleepyempire'); // <-- Automatically sends bot to your server
+            console.log('Join command executed.');
+        }, 3000); // 3-second delay to ensure lobby chunks load safely
+
+        // 3. Make sure it stays in creative mode once it arrives on your server
+        setTimeout(() => {
+            bot.chat('/gamemode creative'); 
+        }, 8000);
+    } );
+    
+    // Anti-kick: Jump cycle to stay active
     setInterval(() => {
         if (bot.entity) bot.setControlState('jump', true);
         setTimeout(() => bot.setControlState('jump', false), 500);
     }, 240000);
 
-    // Auto-reconnect if kicked or server restarts
+    // Auto-reconnect safety net
     bot.on('end', () => {
-        console.log('Disconnected. Reconnecting in 10 seconds...');
-        setTimeout(createBot, 10000);
+        console.log('Disconnected from proxy. Reconnecting in 15 seconds...');
+        setTimeout(createBot, 15000);
     });
-    bot.on('error', (err) => console.log('Error:', err));
+    
+    bot.on('error', (err) => console.log('Network Error:', err));
 }
 
 createBot();
 
-// 2. Dummy Web Server (Keeps the free cloud hosting platform awake)
+// Dummy Web Server for Render hosting uptime
 http.createServer((req, res) => {
     res.write("Bot is alive!");
     res.end();

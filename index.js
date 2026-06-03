@@ -1,49 +1,32 @@
-const mineflayer = require('mineflayer');
-const http = require('http');
+const bedrock = require('bedrock-protocol')
 
-function createBot() {
-    console.log('Attempting connection directly to server address...');
-    
-    const bot = mineflayer.createBot({
-        host: 'sleepyempire.minefort.com', 
-        port: 25565,                         
-        username: 'Minefort_247_Bot',
-        checkTimeoutInterval: 60000
-    });
+const client = bedrock.createClient({
+  host: 'play.minefort.com',   // Connect directly to the main network
+  port: 19132,                  // Default Bedrock port for Minefort
+  username: 'shravan.sktn20@gmail.com', // Your official Bedrock Microsoft login
+  offline: false                // Forces official Microsoft verification to bypass CAPTCHAs
+})
 
-    bot.on('login', () => {
-        console.log('Bot logged into Minefort system successfully!');
-    });
+client.on('spawn', () => {
+  console.log('Bedrock bot spawned successfully in the lobby without CAPTCHA!')
+  
+  // Wait 5 seconds for the lobby loading screens to clear, then join your server
+  setTimeout(() => {
+    // Bedrock accounts send chat text packets differently than Java bots
+    client.queue('text', {
+      type: 'chat',
+      needs_translation: false,
+      source_name: client.username,
+      xuid: '',
+      platform_chat_id: '',
+      message: '/join sleepyempire' // Replace with your server name
+    })
+    console.log('Sent server wake-up command.')
+  }, 5000)
+})
 
-    bot.on('spawn', () => {
-        console.log('Bot spawned in world!');
-        setTimeout(() => {
-            bot.chat('/gamemode creative'); 
-        }, 5000);
-    });
-    
-    // Jump routine to maintain activity state
-    setInterval(() => {
-        if (bot.entity) {
-            bot.setControlState('jump', true);
-            setTimeout(() => bot.setControlState('jump', false), 500);
-        }
-    }, 60000);
-
-    bot.on('end', (reason) => {
-        console.log(`Disconnected. Reason: ${reason}. Retrying in 10s...`);
-        setTimeout(createBot, 10000);
-    });
-    
-    bot.on('error', (err) => {
-        console.log('Internal Network Error: ', err.message);
-    });
-}
-
-createBot();
-
-// Maintain container web binding
-http.createServer((req, res) => {
-    res.write("Bot container online.");
-    res.end();
-}).listen(process.env.PORT || 8080);
+// Auto Reconnect if kicked
+client.on('close', () => {
+  console.log('Disconnected. Reconnecting in 30 seconds...')
+  setTimeout(() => { process.exit(1) }, 30000) // Your host container will auto-restart the script
+})

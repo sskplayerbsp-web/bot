@@ -1,0 +1,17 @@
+build:
+  command: "npm install"
+  system: auto
+
+start_command: "npm start"
+
+scaling:
+  min_replicas: 1
+  max_replicas: 1
+  min_cpu: 0.25
+  max_cpu: 0.5
+  min_memory: 256
+  max_memory: 512
+
+health_check:
+  type: tcp
+  interval_in_seconds: 60

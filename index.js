@@ -2,25 +2,28 @@ const mineflayer = require('mineflayer');
 const { pathfinder, Movements, goals } = require('mineflayer-pathfinder');
 const mcDataLoader = require('minecraft-data');
 
-// ================= EDIT ONLY THIS BLOCK =================
-// Replace these placeholders with YOUR real server IPs and usernames.
-const BOTS = [
-  // Server 1 (3 bots)
-  { host: 'YOUR_SERVER_1_IP', port: 25565, version: '1.20.1', username: 'Steve1', auth: 'offline' },
-  { host: 'YOUR_SERVER_1_IP', port: 25565, version: '1.20.1', username: 'Alex2',  auth: 'offline' },
-  { host: 'YOUR_SERVER_1_IP', port: 25565, version: '1.20.1', username: 'Notch3', auth: 'offline' },
+// ================= BOT LIST: env var first, hardcoded fallback =================
+let BOTS = null;
+if (process.env.BOTS_JSON) {
+  try {
+    BOTS = JSON.parse(process.env.BOTS_JSON);
+    console.log(`✅ Loaded ${BOTS.length} bots from BOTS_JSON env var`);
+  } catch (e) {
+    console.error('❌ BOTS_JSON is not valid JSON:', e.message);
+  }
+}
+if (!BOTS || !BOTS.length) {
+  console.log('⚠️ BOTS_JSON not set/invalid — using hardcoded fallback');
+  BOTS = [
+    { host: 'sleepyempire.levyathan.ch', port: 25565, version: '1.20.1', username: 'Steve1', auth: 'offline' },
+    { host: 'sleepy.free.enzonic.com',   port: 25565, version: '1.20.1', username: 'Alex2',  auth: 'offline' },
+    { host: 'sleepy.free.enzonic.com',   port: 25565, version: '1.20.1', username: 'Notch3', auth: 'offline' }
+  ];
+}
 
-  // Server 2 (2 bots)
-  { host: 'YOUR_SERVER_2_IP', port: 25565, version: '1.20.1', username: 'Bot4',  auth: 'offline' },
-  { host: 'YOUR_SERVER_2_IP', port: 25565, version: '1.20.1', username: 'Bot5',  auth: 'offline' },
-
-  // Server 3 (1 bot)
-  { host: 'YOUR_SERVER_3_IP', port: 25565, version: '1.20.1', username: 'Bot6',  auth: 'offline' }
-];
-
-const SESSION_MINUTES = 30;   // how long each bot stays online per cycle
-const SPAWN_GAP_MS = 20000;   // 20s gap between joins (anti-bot)
-// ========================================================
+const SESSION_MINUTES = parseInt(process.env.SESSION_MINUTES || '30', 10);
+const SPAWN_GAP_MS    = parseInt(process.env.SPAWN_GAP_MS    || '20000', 10);
+// ==============================================================================
 
 const delay = (min = 1000, max = 4000) =>
   new Promise(r => setTimeout(r, Math.random() * (max - min) + min));
@@ -106,10 +109,10 @@ function runBot(cfg) {
 }
 
 (async () => {
+  console.log(`Starting ${BOTS.length} bots...`);
   const promises = [];
   for (let i = 0; i < BOTS.length; i++) {
     promises.push(runBot(BOTS[i]));
-    // Stagger joins so they don't all connect in the same second
     await delay(SPAWN_GAP_MS, SPAWN_GAP_MS + 5000);
   }
   await Promise.all(promises);

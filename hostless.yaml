@@ -1,21 +1,18 @@
 build:
-  command: "npm ci"          # Much faster than 'npm install' if you have a lockfile
+  command: "npm install --no-audit --no-fund"
   system: auto
-  min_cpu: 1                 # Give the build more CPU to finish faster
-  max_cpu: 2
-  min_memory: 1024           # Increase memory to avoid slowdowns
-  max_memory: 2048
+  min_cpu: 0.25
+  max_cpu: 0.5
+  min_memory: 512
+  max_memory: 1024
 
 start_command: "npm start"
+
+health_check:
+  type: http
+  path: "/"
+  interval_in_seconds: 60
 
 scaling:
   min_replicas: 1
   max_replicas: 1
-  min_cpu: 0.25
-  max_cpu: 0.5
-  min_memory: 256
-  max_memory: 512
-
-health_check:
-  type: tcp
-  interval_in_seconds: 60

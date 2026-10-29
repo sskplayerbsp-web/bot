@@ -3,7 +3,7 @@ const { pathfinder, Movements, goals } = require('mineflayer-pathfinder');
 const mcDataLoader = require('minecraft-data');
 const http = require('http');
 
-// ============ BOT LIST (env var first, hardcoded fallback) ============
+// ================= BOT LIST =================
 let BOTS = null;
 if (process.env.BOTS_JSON) {
   try {
@@ -16,9 +16,9 @@ if (process.env.BOTS_JSON) {
 if (!BOTS || !BOTS.length) {
   console.log('⚠️ BOTS_JSON missing — using hardcoded fallback');
   BOTS = [
-    { host: 'sleepy.swiftservers.org',   port: 25565, version: '1.20.1', username: 'Steve1', auth: 'offline' },
-    { host: 'sleepyempire.levyathan.ch', port: 25565, version: '1.20.1', username: 'Alex2',  auth: 'offline' },
-    { host: 'sleepy.free.enzonic.com',   port: 25565, version: '1.20.1', username: 'Notch3', auth: 'offline' }
+    { host: 'sleepyempire.levyathan.ch', port: 25565, version: '26.1', username: 'VoidReaper',   auth: 'offline', password: 'YourPass123' },
+    { host: 'vega.pufferhost.com',       port: 25565, version: '26.1', username: 'ShadowByte',   auth: 'offline', password: 'YourPass123' },
+    { host: 'sleepy.free.enzonic.com',   port: 25565, version: '26.1', username: 'PhantomMiner', auth: 'offline', password: 'YourPass123' }
   ];
 }
 
@@ -26,15 +26,16 @@ const SESSION_MINUTES = parseInt(process.env.SESSION_MINUTES || '30', 10);
 const SPAWN_GAP_MS    = parseInt(process.env.SPAWN_GAP_MS    || '20000', 10);
 const RTP_WAIT_MS     = parseInt(process.env.RTP_WAIT_MS     || '10000', 10);
 const MAX_RECONNECTS  = parseInt(process.env.MAX_RECONNECTS  || '20', 10);
+const AUTH_TIMEOUT_MS = parseInt(process.env.AUTH_TIMEOUT_MS || '20000', 10);
 
-// ============ HEALTH SERVER (needed so Hostless "App" doesn't fail deploy) ============
+// ================= HEALTH SERVER (keeps Hostless App deploy healthy) =================
 const PORT = process.env.PORT || 3000;
 http.createServer((req, res) => {
   res.writeHead(200, { 'Content-Type': 'text/plain' });
   res.end('ok');
 }).listen(PORT, () => console.log(`🌐 Health server on :${PORT}`));
 
-// ============ HELPERS ============
+// ================= HELPERS =================
 const delay = (min = 1000, max = 4000) =>
   new Promise(r => setTimeout(r, Math.random() * (max - min) + min));
 
@@ -78,6 +79,82 @@ async function randomJump(bot) {
   }
 }
 
+// ================= AUTH (login / register) =================
+function waitForAuth(bot, password) {
+  return new Promise((resolve) => {
+    const tag = `[${bot.username}]`;
+    let done = false;
+    let sentLogin = false;
+    let sentRegister = false;
+
+    const finish = (reason) => {
+      if (done) return;
+      done = true;
+      console.log(`${tag} auth: ${reason}`);
+      resolve(true);
+    };
+
+    const handleText = (text) => {
+      if (done) return;
+
+      // Success / already logged in / session resumed
+      if (/success|logged in|authenticated|welcome back|already logged|session/i.test(text)) {
+        finish('success / session');
+        return;
+      }
+
+      // Register prompt — test first, because AuthMe's register prompt also mentions password
+      if (/register|registration/i.test(text)) {
+        if (!sentRegister) {
+          sentRegister = true;
+          console.log(`${tag} register prompt → /register`);
+          bot.chat(`/register ${password} ${password}`);
+        }
+        return;
+      }
+
+      // Login prompt
+      if (/login|log in|authenticate|password/i.test(text)) {
+        if (!sentLogin) {
+          sentLogin = true;
+          console.log(`${tag} login prompt → /login`);
+          bot.chat(`/login ${password}`);
+        }
+      }
+    };
+
+    bot.on('message', (msg) => handleText(msg.toString()));
+    bot.on('chat', (username, message) => {
+      if (username === bot.username) return;
+      handleText(message);
+    });
+
+    // Fallback 1: if no prompt in 4s, try /login (returning player)
+    setTimeout(() => {
+      if (done) return;
+      if (!sentLogin && !sentRegister) {
+        sentLogin = true;
+        console.log(`${tag} no prompt → trying /login`);
+        bot.chat(`/login ${password}`);
+      }
+    }, 4000);
+
+    // Fallback 2: if still not authenticated by 9s, try /register (new player)
+    setTimeout(() => {
+      if (done) return;
+      if (!sentRegister) {
+        sentRegister = true;
+        console.log(`${tag} still not logged in → trying /register`);
+        bot.chat(`/register ${password} ${password}`);
+      }
+    }, 9000);
+
+    // Give up after AUTH_TIMEOUT_MS so the bot doesn't hang forever
+    setTimeout(() => finish('timeout — continuing anyway'), AUTH_TIMEOUT_MS);
+  });
+}
+
+// ================= /rtp =================
 async function doRtp(bot) {
   console.log(`[${bot.username}] sending /rtp`);
   bot.chat('/rtp');
@@ -85,7 +162,7 @@ async function doRtp(bot) {
   console.log(`[${bot.username}] rtp done, pos: ${bot.entity.position}`);
 }
 
-// ============ ONE BOT (with auto-reconnect) ============
+// ================= ONE BOT (with auto-reconnect) =================
 function runBot(cfg) {
   return new Promise(resolve => {
     let bot = null;
@@ -109,9 +186,18 @@ function runBot(cfg) {
         reconnectAttempts = 0;
         console.log(`${tag} ✅ spawned`);
 
-        const mcData = mcDataLoader(bot.version);
+        // 1) LOGIN FIRST — must finish before /rtp or mining
+        if (cfg.password) {
+          await waitForAuth(bot, cfg.password);
+        } else {
+          console.log(`${tag} no password set — skipping auth`);
+        }
+
+        // 2) Then /rtp away from spawn
         await doRtp(bot);
 
+        // 3) Then the normal mining loop
+        const mcData = mcDataLoader(bot.version);
         const end = Date.now() + SESSION_MINUTES * 60 * 1000;
         while (Date.now() < end && bot && bot.entity) {
           try {
@@ -127,10 +213,6 @@ function runBot(cfg) {
 
       bot.on('error', e => console.log(`${tag} err ${e.message}`));
       bot.on('kicked', r => console.log(`${tag} kicked: ${JSON.stringify(r)}`));
-      bot.on('message', (jsonMsg) => {
-        const t = jsonMsg.toString();
-        if (/rtp|teleport|random/i.test(t)) console.log(`${tag} chat: ${t}`);
-      });
 
       bot.on('end', () => {
         console.log(`${tag} disconnected`);
@@ -150,7 +232,7 @@ function runBot(cfg) {
   });
 }
 
-// ============ MAIN LOOP (runs forever) ============
+// ================= MAIN LOOP =================
 (async () => {
   while (true) {
     console.log(`\n===== Cycle start: ${BOTS.length} bots =====`);

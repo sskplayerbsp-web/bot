@@ -22,9 +22,7 @@ if (!BOTS || !BOTS.length) {
   ];
 }
 
-const SESSION_MINUTES = parseInt(process.env.SESSION_MINUTES || '30', 10);
-const SPAWN_GAP_MS    = parseInt(process.env.SPAWN_GAP_MS    || '20000', 10);
-const RTP_WAIT_MS     = parseInt(process.env.RTP_WAIT_MS     || '10000', 10);
+const SESSION_MINUTES = parseInt(process.env.SESSION_MINUTES || '60', 10); // Longer session for AFK
 const MAX_RECONNECTS  = parseInt(process.env.MAX_RECONNECTS  || '20', 10);
 const AUTH_TIMEOUT_MS = parseInt(process.env.AUTH_TIMEOUT_MS || '20000', 10);
 
@@ -38,26 +36,6 @@ http.createServer((req, res) => {
 // ================= HELPERS =================
 const delay = (min = 1000, max = 4000) =>
   new Promise(r => setTimeout(r, Math.random() * (max - min) + min));
-
-async function mineTree(bot) {
-  const logs = ['oak_log', 'birch_log', 'spruce_log', 'jungle_log', 'acacia_log', 'dark_oak_log'];
-  // Look for logs up to 48 blocks away
-  const block = bot.findBlock({ matching: b => logs.includes(b.name), maxDistance: 48 });
-  if (!block) return false;
-  
-  try {
-    // Move ONLY to the tree (doesn't wander aimlessly)
-    await bot.pathfinder.goto(new goals.GoalBlock(block.position.x, block.position.y, block.position.z));
-    let cur = block;
-    for (let i = 0; i < 5; i++) {
-      if (!cur || !logs.includes(cur.name)) break;
-      await bot.dig(cur);
-      await delay(300, 900);
-      cur = bot.blockAt(cur.position.offset(0, 1, 0));
-    }
-    return true;
-  } catch (e) { return false; }
-}
 
 // ================= AUTH =================
 function waitForAuth(bot, password) {
@@ -78,11 +56,11 @@ function waitForAuth(bot, password) {
       if (done) return;
       if (/success|logged in|authenticated|welcome back|already logged|session/i.test(text)) return finish('success / session');
       if (/register|registration/i.test(text)) {
-        if (!sentRegister) { sentRegister = true; console.log(`${tag} register → /register`); bot.chat(`/register ${password} ${password}`); }
+        if (!sentRegister) { sentRegister = true; bot.chat(`/register ${password} ${password}`); }
         return;
       }
       if (/login|log in|authenticate|password/i.test(text)) {
-        if (!sentLogin) { sentLogin = true; console.log(`${tag} login → /login`); bot.chat(`/login ${password}`); }
+        if (!sentLogin) { sentLogin = true; bot.chat(`/login ${password}`); }
       }
     };
 
@@ -95,12 +73,35 @@ function waitForAuth(bot, password) {
   });
 }
 
-// ================= /rtp =================
-async function doRtp(bot) {
-  console.log(`[${bot.username}] 📍 sending /rtp`);
-  bot.chat('/rtp');
-  await delay(RTP_WAIT_MS, RTP_WAIT_MS + 2000);
-  console.log(`[${bot.username}] ✅ rtp done, pos: ${bot.entity.position}`);
+// ================= AFK BEHAVIOR =================
+async function doAFKAction(bot) {
+  // Pick a random action to look like a real player stretching / looking around
+  const action = Math.floor(Math.random() * 5);
+  try {
+    switch (action) {
+      case 0: // Look around
+        await bot.look((Math.random() - 0.5) * 2 * Math.PI, (Math.random() - 0.5) * Math.PI / 3, false);
+        break;
+      case 1: // Jump
+        bot.setControlState('jump', true);
+        await delay(200, 400);
+        bot.setControlState('jump', false);
+        break;
+      case 2: // Walk forward a tiny bit
+        bot.setControlState('forward', true);
+        await delay(500, 1500);
+        bot.setControlState('forward', false);
+        break;
+      case 3: // Sneak (crouch)
+        bot.setControlState('sneak', true);
+        await delay(800, 2000);
+        bot.setControlState('sneak', false);
+        break;
+      case 4: // Swing arm (left click)
+        bot.swingArm();
+        break;
+    }
+  } catch (e) {}
 }
 
 // ================= ONE BOT =================
@@ -108,7 +109,6 @@ function runBot(cfg) {
   return new Promise(resolve => {
     let bot = null;
     let reconnectAttempts = 0;
-    let isDead = false;
 
     const startBot = () => {
       const tag = `[${cfg.username}@${cfg.host}]`;
@@ -124,49 +124,22 @@ function runBot(cfg) {
         reconnectAttempts = 0;
         console.log(`${tag} ✅ spawned`);
 
+        // 1) Login
         if (cfg.password) await waitForAuth(bot, cfg.password);
-        
-        // Initial RTP when joining
-        await doRtp(bot);
 
         const mcData = mcDataLoader(bot.version);
         const movements = new Movements(bot, mcData);
-        movements.canDig = false; // Don't break blocks while walking to a tree
         bot.pathfinder.setMovements(movements);
 
         const end = Date.now() + SESSION_MINUTES * 60 * 1000;
         
+        // 2) AFK Loop
         while (Date.now() < end && bot && bot.entity) {
-          // If bot dies, wait for respawn before doing anything
-          if (isDead) {
-            await delay(2000, 3000);
-            continue; 
-          }
-
-          try {
-            const mined = await mineTree(bot);
-            if (!mined) {
-              // If no trees found within 48 blocks, just RTP to a new area
-              await doRtp(bot);
-            }
-          } catch (e) {}
-          
-          await delay(2000, 5000);
+          await doAFKAction(bot);
+          await delay(4000, 10000); // Wait 4 to 10 seconds between actions
         }
+        
         try { bot.quit('session over'); } catch (e) {}
-      });
-
-      // 🛑 DEATH HANDLER: Rerun /rtp when bot respawns
-      bot.on('death', () => {
-        console.log(`[${cfg.username}] 💀 Died! Waiting for respawn...`);
-        isDead = true;
-      });
-
-      bot.on('respawn', async () => {
-        console.log(`[${cfg.username}] ✨ Respawned. Sending /rtp again.`);
-        isDead = false;
-        await delay(2000, 3000); // wait a sec for chunks to load
-        await doRtp(bot);
       });
 
       bot.on('error', e => console.log(`${tag} err ${e.message}`));
@@ -193,7 +166,8 @@ function runBot(cfg) {
     const promises = [];
     for (let i = 0; i < BOTS.length; i++) {
       promises.push(runBot(BOTS[i]));
-      await delay(SPAWN_GAP_MS, SPAWN_GAP_MS + 5000);
+      // Stagger joins slightly so they don't join in the same tick
+      await delay(5000, 10000); 
     }
     await Promise.all(promises);
     console.log('===== Cycle done. Restarting in 30s =====\n');

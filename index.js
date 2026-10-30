@@ -28,7 +28,7 @@ const RTP_WAIT_MS     = parseInt(process.env.RTP_WAIT_MS     || '10000', 10);
 const MAX_RECONNECTS  = parseInt(process.env.MAX_RECONNECTS  || '20', 10);
 const AUTH_TIMEOUT_MS = parseInt(process.env.AUTH_TIMEOUT_MS || '20000', 10);
 
-// ================= HEALTH SERVER (keeps Hostless App deploy healthy) =================
+// ================= HEALTH SERVER =================
 const PORT = process.env.PORT || 3000;
 http.createServer((req, res) => {
   res.writeHead(200, { 'Content-Type': 'text/plain' });
@@ -46,6 +46,12 @@ async function humanLook(bot) {
 
 async function wander(bot, mcData) {
   const m = new Movements(bot, mcData);
+  
+  // 🛑 FIX: Avoid NPCs so the bot doesn't trigger broken server scripts
+  m.entitiesToAvoid.add('armor_stand'); // Most NPCs are armor stands
+  m.entitiesToAvoid.add('npc');         // Some plugins use a custom 'npc' entity
+  m.canDig = false;                     // Don't dig when wandering around spawn
+  
   bot.pathfinder.setMovements(m);
   const p = bot.entity.position;
   const goal = new goals.GoalNear(
@@ -79,7 +85,7 @@ async function randomJump(bot) {
   }
 }
 
-// ================= AUTH (login / register) =================
+// ================= AUTH =================
 function waitForAuth(bot, password) {
   return new Promise((resolve) => {
     const tag = `[${bot.username}]`;
@@ -96,61 +102,22 @@ function waitForAuth(bot, password) {
 
     const handleText = (text) => {
       if (done) return;
-
-      // Success / already logged in / session resumed
-      if (/success|logged in|authenticated|welcome back|already logged|session/i.test(text)) {
-        finish('success / session');
-        return;
-      }
-
-      // Register prompt — test first, because AuthMe's register prompt also mentions password
+      if (/success|logged in|authenticated|welcome back|already logged|session/i.test(text)) return finish('success / session');
       if (/register|registration/i.test(text)) {
-        if (!sentRegister) {
-          sentRegister = true;
-          console.log(`${tag} register prompt → /register`);
-          bot.chat(`/register ${password} ${password}`);
-        }
+        if (!sentRegister) { sentRegister = true; console.log(`${tag} register → /register`); bot.chat(`/register ${password} ${password}`); }
         return;
       }
-
-      // Login prompt
       if (/login|log in|authenticate|password/i.test(text)) {
-        if (!sentLogin) {
-          sentLogin = true;
-          console.log(`${tag} login prompt → /login`);
-          bot.chat(`/login ${password}`);
-        }
+        if (!sentLogin) { sentLogin = true; console.log(`${tag} login → /login`); bot.chat(`/login ${password}`); }
       }
     };
 
     bot.on('message', (msg) => handleText(msg.toString()));
-    bot.on('chat', (username, message) => {
-      if (username === bot.username) return;
-      handleText(message);
-    });
+    bot.on('chat', (username, message) => { if (username !== bot.username) handleText(message); });
 
-    // Fallback 1: if no prompt in 4s, try /login (returning player)
-    setTimeout(() => {
-      if (done) return;
-      if (!sentLogin && !sentRegister) {
-        sentLogin = true;
-        console.log(`${tag} no prompt → trying /login`);
-        bot.chat(`/login ${password}`);
-      }
-    }, 4000);
-
-    // Fallback 2: if still not authenticated by 9s, try /register (new player)
-    setTimeout(() => {
-      if (done) return;
-      if (!sentRegister) {
-        sentRegister = true;
-        console.log(`${tag} still not logged in → trying /register`);
-        bot.chat(`/register ${password} ${password}`);
-      }
-    }, 9000);
-
-    // Give up after AUTH_TIMEOUT_MS so the bot doesn't hang forever
-    setTimeout(() => finish('timeout — continuing anyway'), AUTH_TIMEOUT_MS);
+    setTimeout(() => { if (!done && !sentLogin && !sentRegister) { sentLogin = true; bot.chat(`/login ${password}`); } }, 4000);
+    setTimeout(() => { if (!done && !sentRegister) { sentRegister = true; bot.chat(`/register ${password} ${password}`); } }, 9000);
+    setTimeout(() => finish('timeout'), AUTH_TIMEOUT_MS);
   });
 }
 
@@ -162,7 +129,7 @@ async function doRtp(bot) {
   console.log(`[${bot.username}] rtp done, pos: ${bot.entity.position}`);
 }
 
-// ================= ONE BOT (with auto-reconnect) =================
+// ================= ONE BOT =================
 function runBot(cfg) {
   return new Promise(resolve => {
     let bot = null;
@@ -173,12 +140,8 @@ function runBot(cfg) {
       console.log(`${tag} connecting (attempt ${reconnectAttempts + 1})`);
 
       bot = mineflayer.createBot({
-        host: cfg.host,
-        port: cfg.port,
-        username: cfg.username,
-        version: cfg.version,
-        auth: cfg.auth,
-        viewDistance: 'tiny'
+        host: cfg.host, port: cfg.port, username: cfg.username,
+        version: cfg.version, auth: cfg.auth, viewDistance: 'tiny'
       });
       bot.loadPlugin(pathfinder);
 
@@ -186,17 +149,9 @@ function runBot(cfg) {
         reconnectAttempts = 0;
         console.log(`${tag} ✅ spawned`);
 
-        // 1) LOGIN FIRST — must finish before /rtp or mining
-        if (cfg.password) {
-          await waitForAuth(bot, cfg.password);
-        } else {
-          console.log(`${tag} no password set — skipping auth`);
-        }
-
-        // 2) Then /rtp away from spawn
+        if (cfg.password) await waitForAuth(bot, cfg.password);
         await doRtp(bot);
 
-        // 3) Then the normal mining loop
         const mcData = mcDataLoader(bot.version);
         const end = Date.now() + SESSION_MINUTES * 60 * 1000;
         while (Date.now() < end && bot && bot.entity) {
@@ -213,21 +168,16 @@ function runBot(cfg) {
 
       bot.on('error', e => console.log(`${tag} err ${e.message}`));
       bot.on('kicked', r => console.log(`${tag} kicked: ${JSON.stringify(r)}`));
-
       bot.on('end', () => {
         console.log(`${tag} disconnected`);
         if (reconnectAttempts < MAX_RECONNECTS) {
           reconnectAttempts++;
           const wait = Math.min(60000, 5000 * reconnectAttempts);
-          console.log(`${tag} reconnecting in ${Math.round(wait / 1000)}s (${reconnectAttempts}/${MAX_RECONNECTS})`);
+          console.log(`${tag} reconnecting in ${Math.round(wait / 1000)}s`);
           setTimeout(startBot, wait);
-        } else {
-          console.log(`${tag} ❌ giving up after ${MAX_RECONNECTS} attempts`);
-          resolve();
-        }
+        } else { console.log(`${tag} ❌ giving up`); resolve(); }
       });
     };
-
     startBot();
   });
 }

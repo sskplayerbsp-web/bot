@@ -16,9 +16,9 @@ if (process.env.BOTS_JSON) {
 if (!BOTS || !BOTS.length) {
   console.log('⚠️ BOTS_JSON missing — using hardcoded fallback');
   BOTS = [
-    { host: 'sleepyempire.levyathan.ch', port: 25565, version: '26.1', username: 'VoidReaper',   auth: 'offline', password: 'YourPass123' },
-    { host: 'vega.pufferhost.com',       port: 25565, version: '26.1', username: 'ShadowByte',   auth: 'offline', password: 'YourPass123' },
-    { host: 'sleepy.free.enzonic.com',   port: 25565, version: '26.1', username: 'PhantomMiner', auth: 'offline', password: 'YourPass123' }
+    { host: 'sleepyempire.levyathan.ch', port: 25565, version: '1.20.1', username: 'VoidReaper',   auth: 'offline', password: 'YourPass123' },
+    { host: 'vega.pufferhost.com',       port: 25565, version: '1.20.1', username: 'ShadowByte',   auth: 'offline', password: 'YourPass123' },
+    { host: 'sleepy.free.enzonic.com',   port: 25565, version: '1.20.1', username: 'PhantomMiner', auth: 'offline', password: 'YourPass123' }
   ];
 }
 
@@ -39,32 +39,14 @@ http.createServer((req, res) => {
 const delay = (min = 1000, max = 4000) =>
   new Promise(r => setTimeout(r, Math.random() * (max - min) + min));
 
-async function humanLook(bot) {
-  await bot.look((Math.random() - 0.5) * 2 * Math.PI, (Math.random() - 0.5) * Math.PI / 3, false);
-  await delay(400, 1500);
-}
-
-async function wander(bot, mcData) {
-  const m = new Movements(bot, mcData);
-  
-  // 🛑 FIX: Avoid NPCs so the bot doesn't trigger broken server scripts
-  m.entitiesToAvoid.add('armor_stand'); // Most NPCs are armor stands
-  m.entitiesToAvoid.add('npc');         // Some plugins use a custom 'npc' entity
-  m.canDig = false;                     // Don't dig when wandering around spawn
-  
-  bot.pathfinder.setMovements(m);
-  const p = bot.entity.position;
-  const goal = new goals.GoalNear(
-    p.x + (Math.random() - 0.5) * 24, p.y, p.z + (Math.random() - 0.5) * 24, 2);
-  try { await bot.pathfinder.goto(goal); } catch (e) {}
-  await delay(1000, 3000);
-}
-
 async function mineTree(bot) {
   const logs = ['oak_log', 'birch_log', 'spruce_log', 'jungle_log', 'acacia_log', 'dark_oak_log'];
+  // Look for logs up to 48 blocks away
   const block = bot.findBlock({ matching: b => logs.includes(b.name), maxDistance: 48 });
   if (!block) return false;
+  
   try {
+    // Move ONLY to the tree (doesn't wander aimlessly)
     await bot.pathfinder.goto(new goals.GoalBlock(block.position.x, block.position.y, block.position.z));
     let cur = block;
     for (let i = 0; i < 5; i++) {
@@ -75,14 +57,6 @@ async function mineTree(bot) {
     }
     return true;
   } catch (e) { return false; }
-}
-
-async function randomJump(bot) {
-  if (Math.random() > 0.6) {
-    bot.setControlState('jump', true);
-    await delay(150, 350);
-    bot.setControlState('jump', false);
-  }
 }
 
 // ================= AUTH =================
@@ -123,10 +97,10 @@ function waitForAuth(bot, password) {
 
 // ================= /rtp =================
 async function doRtp(bot) {
-  console.log(`[${bot.username}] sending /rtp`);
+  console.log(`[${bot.username}] 📍 sending /rtp`);
   bot.chat('/rtp');
   await delay(RTP_WAIT_MS, RTP_WAIT_MS + 2000);
-  console.log(`[${bot.username}] rtp done, pos: ${bot.entity.position}`);
+  console.log(`[${bot.username}] ✅ rtp done, pos: ${bot.entity.position}`);
 }
 
 // ================= ONE BOT =================
@@ -134,6 +108,7 @@ function runBot(cfg) {
   return new Promise(resolve => {
     let bot = null;
     let reconnectAttempts = 0;
+    let isDead = false;
 
     const startBot = () => {
       const tag = `[${cfg.username}@${cfg.host}]`;
@@ -150,24 +125,53 @@ function runBot(cfg) {
         console.log(`${tag} ✅ spawned`);
 
         if (cfg.password) await waitForAuth(bot, cfg.password);
+        
+        // Initial RTP when joining
         await doRtp(bot);
 
         const mcData = mcDataLoader(bot.version);
+        const movements = new Movements(bot, mcData);
+        movements.canDig = false; // Don't break blocks while walking to a tree
+        bot.pathfinder.setMovements(movements);
+
         const end = Date.now() + SESSION_MINUTES * 60 * 1000;
+        
         while (Date.now() < end && bot && bot.entity) {
+          // If bot dies, wait for respawn before doing anything
+          if (isDead) {
+            await delay(2000, 3000);
+            continue; 
+          }
+
           try {
             const mined = await mineTree(bot);
-            if (!mined) await wander(bot, mcData);
-            if (Math.random() < 0.3) await humanLook(bot);
-            if (Math.random() < 0.2) await randomJump(bot);
+            if (!mined) {
+              // If no trees found within 48 blocks, just RTP to a new area
+              await doRtp(bot);
+            }
           } catch (e) {}
-          await delay(2000, 6000);
+          
+          await delay(2000, 5000);
         }
         try { bot.quit('session over'); } catch (e) {}
       });
 
+      // 🛑 DEATH HANDLER: Rerun /rtp when bot respawns
+      bot.on('death', () => {
+        console.log(`[${cfg.username}] 💀 Died! Waiting for respawn...`);
+        isDead = true;
+      });
+
+      bot.on('respawn', async () => {
+        console.log(`[${cfg.username}] ✨ Respawned. Sending /rtp again.`);
+        isDead = false;
+        await delay(2000, 3000); // wait a sec for chunks to load
+        await doRtp(bot);
+      });
+
       bot.on('error', e => console.log(`${tag} err ${e.message}`));
       bot.on('kicked', r => console.log(`${tag} kicked: ${JSON.stringify(r)}`));
+      
       bot.on('end', () => {
         console.log(`${tag} disconnected`);
         if (reconnectAttempts < MAX_RECONNECTS) {

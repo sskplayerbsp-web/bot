@@ -8,8 +8,8 @@ const SERVER_HOST = 'sleepyempire.levyathan.ch';
 const SERVER_PORT = 19313;
 const BOT_EMAIL = 'shravan.sktn20@gmail.com';
 
-const CHECK_INTERVAL_MS = 30000;
-const SESSION_MINUTES = 60;
+const CHECK_INTERVAL_MS = 30000; // Check for new friends every 30s
+const SESSION_MINUTES = 120;     // Keep alive for 2 hours before cycling
 // ==========================================
 
 // ================= HEALTH SERVER =================
@@ -21,11 +21,20 @@ http.createServer((req, res) => {
 
 const delay = (min = 1000, max = 4000) => new Promise(r => setTimeout(r, Math.random() * (max - min) + min));
 
-// ================= AUTH FLOW SETUP =================
-// Using the 'live' flow with a known Microsoft client ID bypasses the
-// requirement for a custom Azure authTitle.
+// ================= AUTH FLOW (IN-MEMORY FIX) =================
+// Using an in-memory cache to prevent EROFS (Read-Only File System) errors
 function createAuthflow(email) {
-  return new Authflow(email, './auth-cache', {
+  const inMemoryCacheFactory = ({ username, cacheName }) => {
+    let cache = {};
+    return {
+      async getCached() { return cache.value; },
+      async setCached(value) { cache.value = value; },
+      async setCachedPartial(value) { cache.value = { ...cache.value, ...value }; },
+      async reset() { cache = {}; }
+    };
+  };
+
+  return new Authflow(email, inMemoryCacheFactory, {
     flow: 'live',
     authTitle: Titles.MinecraftNintendoSwitch,
     deviceType: 'Nintendo'
@@ -82,7 +91,7 @@ async function watchForNewFriends(authflow, serverHost, serverPort) {
   console.log('[Friends] Starting friend watcher loop...');
   const initialFollowers = await fetchFollowers(authflow);
   initialFollowers.forEach(f => knownFriendXuids.add(f.xuid));
-  console.log(`[Friends] Loaded ${knownFriendXuids.size} existing followers. Watching...`);
+  console.log(`[Friends] Loaded ${knownFriendXuids.size} existing followers. Watching for new ones...`);
 
   while (true) {
     await delay(CHECK_INTERVAL_MS, CHECK_INTERVAL_MS + 5000);
@@ -118,7 +127,6 @@ function runBedrockBot(email, host, port) {
     let reconnectAttempts = 0;
     let isIntentionallyDisconnected = false;
     
-    // Use the corrected auth flow
     const authflow = createAuthflow(email);
 
     const startBot = async () => {
@@ -159,11 +167,13 @@ function runBedrockBot(email, host, port) {
 
         client.on('error', (err) => console.error(`${tag} error:`, err.message));
         client.on('kick', (reason) => console.log(`${tag} kicked: ${reason}`));
+        
         client.on('close', () => {
           console.log(`${tag} connection closed.`);
           if (reconnectAttempts < 10 && !isIntentionallyDisconnected) {
             reconnectAttempts++;
             const wait = Math.min(60000, 5000 * reconnectAttempts);
+            console.log(`${tag} reconnecting in ${Math.round(wait / 1000)}s...`);
             setTimeout(startBot, wait);
           } else {
             resolve();

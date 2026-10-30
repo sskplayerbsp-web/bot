@@ -1,5 +1,5 @@
 {
-  "name": "minecraft-bedrock-bots",
+  "name": "minecraft-bedrock-bot",
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {

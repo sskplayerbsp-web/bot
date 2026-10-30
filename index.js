@@ -1,30 +1,16 @@
-const mineflayer = require('mineflayer');
-const { pathfinder, Movements, goals } = require('mineflayer-pathfinder');
-const mcDataLoader = require('minecraft-data');
+const bedrock = require('bedrock-protocol');
+const { Authflow } = require('prismarine-auth');
+const fetch = require('node-fetch');
 const http = require('http');
 
-// ================= BOT LIST =================
-let BOTS = null;
-if (process.env.BOTS_JSON) {
-  try {
-    BOTS = JSON.parse(process.env.BOTS_JSON);
-    console.log(`✅ Loaded ${BOTS.length} bots from BOTS_JSON`);
-  } catch (e) {
-    console.error('❌ Bad BOTS_JSON:', e.message);
-  }
-}
-if (!BOTS || !BOTS.length) {
-  console.log('⚠️ BOTS_JSON missing — using hardcoded fallback');
-  BOTS = [
-    { host: 'sleepyempire.levyathan.ch', port: 25565, version: '1.20.1', username: 'VoidReaper',   auth: 'offline', password: 'YourPass123' },
-    { host: 'vega.pufferhost.com',       port: 25565, version: '1.20.1', username: 'ShadowByte',   auth: 'offline', password: 'YourPass123' },
-    { host: 'sleepy.free.enzonic.com',   port: 25565, version: '1.20.1', username: 'PhantomMiner', auth: 'offline', password: 'YourPass123' }
-  ];
-}
+// ================= CONFIG =================
+const SERVER_HOST = 'sleepyempire.levyathan.ch';
+const SERVER_PORT = 19313;
+const BOT_EMAIL = 'shravav.sktn20@gmail.com'; // The Microsoft account for the bot
 
-const SESSION_MINUTES = parseInt(process.env.SESSION_MINUTES || '60', 10); // Longer session for AFK
-const MAX_RECONNECTS  = parseInt(process.env.MAX_RECONNECTS  || '20', 10);
-const AUTH_TIMEOUT_MS = parseInt(process.env.AUTH_TIMEOUT_MS || '20000', 10);
+const CHECK_INTERVAL_MS = 30000; // Check for new friends every 30 seconds
+const SESSION_MINUTES = 6000;
+// ==========================================
 
 // ================= HEALTH SERVER =================
 const PORT = process.env.PORT || 3000;
@@ -33,144 +19,172 @@ http.createServer((req, res) => {
   res.end('ok');
 }).listen(PORT, () => console.log(`🌐 Health server on :${PORT}`));
 
-// ================= HELPERS =================
-const delay = (min = 1000, max = 4000) =>
-  new Promise(r => setTimeout(r, Math.random() * (max - min) + min));
+const delay = (min = 1000, max = 4000) => new Promise(r => setTimeout(r, Math.random() * (max - min) + min));
 
-// ================= AUTH =================
-function waitForAuth(bot, password) {
-  return new Promise((resolve) => {
-    const tag = `[${bot.username}]`;
-    let done = false;
-    let sentLogin = false;
-    let sentRegister = false;
+// ================= FRIENDS & INVITE LOGIC =================
+const knownFriendXuids = new Set();
 
-    const finish = (reason) => {
-      if (done) return;
-      done = true;
-      console.log(`${tag} auth: ${reason}`);
-      resolve(true);
-    };
+async function getXboxToken(authflow, relyingParty) {
+  // relyingParty: 'http://xboxlive.com' for peoplehub, 'https://multiplayer.minecraft.net/' for invites
+  return await authflow.getXboxToken(relyingParty);
+}
 
-    const handleText = (text) => {
-      if (done) return;
-      if (/success|logged in|authenticated|welcome back|already logged|session/i.test(text)) return finish('success / session');
-      if (/register|registration/i.test(text)) {
-        if (!sentRegister) { sentRegister = true; bot.chat(`/register ${password} ${password}`); }
-        return;
+async function fetchFollowers(authflow) {
+  try {
+    const token = await getXboxToken(authflow, 'http://xboxlive.com');
+    const res = await fetch('https://peoplehub.xboxlive.com/users/me/people/followers?maxItems=100', {
+      headers: {
+        'Authorization': `XBL3.0 x=${token.userHash};${token.XSTSToken}`,
+        'x-xbl-contract-version': '2',
+        'Accept': 'application/json'
       }
-      if (/login|log in|authenticate|password/i.test(text)) {
-        if (!sentLogin) { sentLogin = true; bot.chat(`/login ${password}`); }
+    });
+    const data = await res.json();
+    return data.people || []; // Returns array of { xuid, gamertag, ... }
+  } catch (err) {
+    console.error('❌ Failed to fetch followers:', err.message);
+    return [];
+  }
+}
+
+async function sendInvite(authflow, xuid, gamertag, host, port) {
+  try {
+    const token = await getXboxToken(authflow, 'https://multiplayer.minecraft.net/');
+    console.log(`[Invite] Sending invite to ${gamertag} (XUID: ${xuid})...`);
+    
+    const res = await fetch(`https://multiplayer.minecraft.net/api/v1/users/${xuid}/invite`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `XBL3.0 x=${token.userHash};${token.XSTSToken}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        connectionString: `${host}:${port}`
+      })
+    });
+
+    if (res.ok) {
+      console.log(`✅ Successfully invited ${gamertag}!`);
+    } else {
+      const text = await res.text();
+      console.log(`❌ Invite failed for ${gamertag}. Status: ${res.status} - ${text}`);
+    }
+  } catch (err) {
+    console.error(`❌ Invite error for ${gamertag}:`, err.message);
+  }
+}
+
+async function watchForNewFriends(authflow, serverHost, serverPort) {
+  console.log('[Friends] Starting friend watcher loop...');
+  
+  // Initial population of the set so we don't invite existing friends on startup
+  const initialFollowers = await fetchFollowers(authflow);
+  initialFollowers.forEach(f => knownFriendXuids.add(f.xuid));
+  console.log(`[Friends] Loaded ${knownFriendXuids.size} existing followers. Watching for new ones...`);
+
+  while (true) {
+    await delay(CHECK_INTERVAL_MS, CHECK_INTERVAL_MS + 5000);
+    const currentFollowers = await fetchFollowers(authflow);
+
+    for (const follower of currentFollowers) {
+      if (!knownFriendXuids.has(follower.xuid)) {
+        // New friend detected!
+        console.log(`👋 New friend detected: ${follower.gamertag || follower.displayName} (${follower.xuid})`);
+        knownFriendXuids.add(follower.xuid);
+        await sendInvite(authflow, follower.xuid, follower.gamertag || follower.displayName, serverHost, serverPort);
       }
-    };
-
-    bot.on('message', (msg) => handleText(msg.toString()));
-    bot.on('chat', (username, message) => { if (username !== bot.username) handleText(message); });
-
-    setTimeout(() => { if (!done && !sentLogin && !sentRegister) { sentLogin = true; bot.chat(`/login ${password}`); } }, 4000);
-    setTimeout(() => { if (!done && !sentRegister) { sentRegister = true; bot.chat(`/register ${password} ${password}`); } }, 9000);
-    setTimeout(() => finish('timeout'), AUTH_TIMEOUT_MS);
-  });
+    }
+  }
 }
 
 // ================= AFK BEHAVIOR =================
-async function doAFKAction(bot) {
-  // Pick a random action to look like a real player stretching / looking around
+async function doAFKAction(client) {
   const action = Math.floor(Math.random() * 5);
   try {
     switch (action) {
-      case 0: // Look around
-        await bot.look((Math.random() - 0.5) * 2 * Math.PI, (Math.random() - 0.5) * Math.PI / 3, false);
-        break;
-      case 1: // Jump
-        bot.setControlState('jump', true);
-        await delay(200, 400);
-        bot.setControlState('jump', false);
-        break;
-      case 2: // Walk forward a tiny bit
-        bot.setControlState('forward', true);
-        await delay(500, 1500);
-        bot.setControlState('forward', false);
-        break;
-      case 3: // Sneak (crouch)
-        bot.setControlState('sneak', true);
-        await delay(800, 2000);
-        bot.setControlState('sneak', false);
-        break;
-      case 4: // Swing arm (left click)
-        bot.swingArm();
-        break;
+      case 0: if (client.entity) console.log('[AFK] Looking around'); break;
+      case 1: console.log('[AFK] Jumping'); break;
+      case 2: console.log('[AFK] Swinging arm'); break;
+      default: break;
     }
   } catch (e) {}
 }
 
-// ================= ONE BOT =================
-function runBot(cfg) {
-  return new Promise(resolve => {
-    let bot = null;
+// ================= BOT MAIN =================
+function runBedrockBot(email, host, port) {
+  return new Promise(async (resolve) => {
+    let client = null;
     let reconnectAttempts = 0;
+    let isIntentionallyDisconnected = false;
+    const authflow = new Authflow(email, './auth-cache', { flow: 'msal' });
 
-    const startBot = () => {
-      const tag = `[${cfg.username}@${cfg.host}]`;
-      console.log(`${tag} connecting (attempt ${reconnectAttempts + 1})`);
+    const startBot = async () => {
+      const tag = `[${email}@${host}]`;
+      console.log(`${tag} connecting (attempt ${reconnectAttempts + 1})...`);
 
-      bot = mineflayer.createBot({
-        host: cfg.host, port: cfg.port, username: cfg.username,
-        version: cfg.version, auth: cfg.auth, viewDistance: 'tiny'
-      });
-      bot.loadPlugin(pathfinder);
+      try {
+        client = bedrock.createClient({
+          host: host,
+          port: port,
+          username: email,
+          offline: false,
+          authflow: authflow
+        });
 
-      bot.once('spawn', async () => {
-        reconnectAttempts = 0;
-        console.log(`${tag} ✅ spawned`);
+        client.on('connect', () => {
+          console.log(`${tag} connected to server.`);
+          reconnectAttempts = 0;
+        });
 
-        // 1) Login
-        if (cfg.password) await waitForAuth(bot, cfg.password);
+        client.on('join', async () => {
+          console.log(`${tag} ✅ spawned and joined the game.`);
+          
+          // Start the friend watcher in the background
+          if (!client.friendWatcherStarted) {
+            client.friendWatcherStarted = true;
+            watchForNewFriends(authflow, host, port).catch(err => console.error('Watcher error:', err));
+          }
 
-        const mcData = mcDataLoader(bot.version);
-        const movements = new Movements(bot, mcData);
-        bot.pathfinder.setMovements(movements);
+          // Start AFK loop
+          const endTime = Date.now() + SESSION_MINUTES * 60 * 1000;
+          while (Date.now() < endTime && client && !isIntentionallyDisconnected) {
+            await doAFKAction(client);
+            await delay(4000, 10000);
+          }
+          
+          isIntentionallyDisconnected = true;
+          if (client) client.disconnect('Session over');
+        });
 
-        const end = Date.now() + SESSION_MINUTES * 60 * 1000;
-        
-        // 2) AFK Loop
-        while (Date.now() < end && bot && bot.entity) {
-          await doAFKAction(bot);
-          await delay(4000, 10000); // Wait 4 to 10 seconds between actions
-        }
-        
-        try { bot.quit('session over'); } catch (e) {}
-      });
+        client.on('error', (err) => console.error(`${tag} error:`, err.message));
+        client.on('kick', (reason) => console.log(`${tag} kicked: ${reason}`));
+        client.on('close', () => {
+          console.log(`${tag} connection closed.`);
+          if (reconnectAttempts < 10 && !isIntentionallyDisconnected) {
+            reconnectAttempts++;
+            const wait = Math.min(60000, 5000 * reconnectAttempts);
+            setTimeout(startBot, wait);
+          } else {
+            resolve();
+          }
+        });
 
-      bot.on('error', e => console.log(`${tag} err ${e.message}`));
-      bot.on('kicked', r => console.log(`${tag} kicked: ${JSON.stringify(r)}`));
-      
-      bot.on('end', () => {
-        console.log(`${tag} disconnected`);
-        if (reconnectAttempts < MAX_RECONNECTS) {
+      } catch (error) {
+        console.error(`${tag} failed:`, error.message);
+        if (reconnectAttempts < 10) {
           reconnectAttempts++;
-          const wait = Math.min(60000, 5000 * reconnectAttempts);
-          console.log(`${tag} reconnecting in ${Math.round(wait / 1000)}s`);
-          setTimeout(startBot, wait);
-        } else { console.log(`${tag} ❌ giving up`); resolve(); }
-      });
+          setTimeout(startBot, 10000);
+        } else {
+          resolve();
+        }
+      }
     };
+
     startBot();
   });
 }
 
-// ================= MAIN LOOP =================
+// ================= START =================
 (async () => {
-  while (true) {
-    console.log(`\n===== Cycle start: ${BOTS.length} bots =====`);
-    const promises = [];
-    for (let i = 0; i < BOTS.length; i++) {
-      promises.push(runBot(BOTS[i]));
-      // Stagger joins slightly so they don't join in the same tick
-      await delay(5000, 10000); 
-    }
-    await Promise.all(promises);
-    console.log('===== Cycle done. Restarting in 30s =====\n');
-    await delay(30000, 60000);
-  }
+  await runBedrockBot(BOT_EMAIL, SERVER_HOST, SERVER_PORT);
 })();

@@ -5,7 +5,7 @@ const http = require('http');
 
 // ================= CONFIG =================
 const SERVER_HOST = 'sleepyempire.levyathan.ch';
-const SERVER_PORT = 19313; // Java port
+const SERVER_PORT = 25565; // Java port
 const BOT_USERNAME = 'VoidReaper'; 
 const BOT_PASSWORD = 'Streamersarenotcoolbeo'; // Change if needed
 // ==========================================

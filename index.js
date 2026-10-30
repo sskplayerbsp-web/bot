@@ -21,20 +21,11 @@ http.createServer((req, res) => {
 
 const delay = (min = 1000, max = 4000) => new Promise(r => setTimeout(r, Math.random() * (max - min) + min));
 
-// ================= AUTH FLOW (IN-MEMORY FIX) =================
-// Using an in-memory cache to prevent EROFS (Read-Only File System) errors
+// ================= AUTH FLOW (Writable Cache Fix) =================
 function createAuthflow(email) {
-  const inMemoryCacheFactory = ({ username, cacheName }) => {
-    let cache = {};
-    return {
-      async getCached() { return cache.value; },
-      async setCached(value) { cache.value = value; },
-      async setCachedPartial(value) { cache.value = { ...cache.value, ...value }; },
-      async reset() { cache = {}; }
-    };
-  };
-
-  return new Authflow(email, inMemoryCacheFactory, {
+  // Use /tmp/auth-cache, which is writable in the Hostless worker environment.
+  // This avoids the "read-only file system" (EROFS) error.
+  return new Authflow(email, '/tmp/auth-cache', {
     flow: 'live',
     authTitle: Titles.MinecraftNintendoSwitch,
     deviceType: 'Nintendo'

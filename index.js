@@ -4,9 +4,9 @@ const fetch = require('node-fetch');
 const http = require('http');
 
 // ================= CONFIG =================
-const SERVER_HOST = 'YOUR_SERVER_IP_OR_HOSTNAME';
-const SERVER_PORT = 19132;
-const BOT_EMAIL = 'your_email@example.com';
+const SERVER_HOST = 'sleepyempire.levyathan.ch';
+const SERVER_PORT = 19313;
+const BOT_EMAIL = 'shravan.sktn20@gmail.com';
 
 const CHECK_INTERVAL_MS = 30000;
 const SESSION_MINUTES = 60;

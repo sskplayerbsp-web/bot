@@ -1,15 +1,15 @@
 const bedrock = require('bedrock-protocol');
-const { Authflow } = require('prismarine-auth');
+const { Authflow, Titles } = require('prismarine-auth');
 const fetch = require('node-fetch');
 const http = require('http');
 
 // ================= CONFIG =================
-const SERVER_HOST = 'sleepyempire.levyathan.ch';
-const SERVER_PORT = 19313;
-const BOT_EMAIL = 'shravav.sktn20@gmail.com'; // The Microsoft account for the bot
+const SERVER_HOST = 'YOUR_SERVER_IP_OR_HOSTNAME';
+const SERVER_PORT = 19132;
+const BOT_EMAIL = 'your_email@example.com';
 
-const CHECK_INTERVAL_MS = 30000; // Check for new friends every 30 seconds
-const SESSION_MINUTES = 6000;
+const CHECK_INTERVAL_MS = 30000;
+const SESSION_MINUTES = 60;
 // ==========================================
 
 // ================= HEALTH SERVER =================
@@ -21,17 +21,23 @@ http.createServer((req, res) => {
 
 const delay = (min = 1000, max = 4000) => new Promise(r => setTimeout(r, Math.random() * (max - min) + min));
 
+// ================= AUTH FLOW SETUP =================
+// Using the 'live' flow with a known Microsoft client ID bypasses the
+// requirement for a custom Azure authTitle.
+function createAuthflow(email) {
+  return new Authflow(email, './auth-cache', {
+    flow: 'live',
+    authTitle: Titles.MinecraftNintendoSwitch,
+    deviceType: 'Nintendo'
+  });
+}
+
 // ================= FRIENDS & INVITE LOGIC =================
 const knownFriendXuids = new Set();
 
-async function getXboxToken(authflow, relyingParty) {
-  // relyingParty: 'http://xboxlive.com' for peoplehub, 'https://multiplayer.minecraft.net/' for invites
-  return await authflow.getXboxToken(relyingParty);
-}
-
 async function fetchFollowers(authflow) {
   try {
-    const token = await getXboxToken(authflow, 'http://xboxlive.com');
+    const token = await authflow.getXboxToken('http://xboxlive.com');
     const res = await fetch('https://peoplehub.xboxlive.com/users/me/people/followers?maxItems=100', {
       headers: {
         'Authorization': `XBL3.0 x=${token.userHash};${token.XSTSToken}`,
@@ -40,7 +46,7 @@ async function fetchFollowers(authflow) {
       }
     });
     const data = await res.json();
-    return data.people || []; // Returns array of { xuid, gamertag, ... }
+    return data.people || [];
   } catch (err) {
     console.error('❌ Failed to fetch followers:', err.message);
     return [];
@@ -49,7 +55,7 @@ async function fetchFollowers(authflow) {
 
 async function sendInvite(authflow, xuid, gamertag, host, port) {
   try {
-    const token = await getXboxToken(authflow, 'https://multiplayer.minecraft.net/');
+    const token = await authflow.getXboxToken('https://multiplayer.minecraft.net/');
     console.log(`[Invite] Sending invite to ${gamertag} (XUID: ${xuid})...`);
     
     const res = await fetch(`https://multiplayer.minecraft.net/api/v1/users/${xuid}/invite`, {
@@ -58,9 +64,7 @@ async function sendInvite(authflow, xuid, gamertag, host, port) {
         'Authorization': `XBL3.0 x=${token.userHash};${token.XSTSToken}`,
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify({
-        connectionString: `${host}:${port}`
-      })
+      body: JSON.stringify({ connectionString: `${host}:${port}` })
     });
 
     if (res.ok) {
@@ -76,11 +80,9 @@ async function sendInvite(authflow, xuid, gamertag, host, port) {
 
 async function watchForNewFriends(authflow, serverHost, serverPort) {
   console.log('[Friends] Starting friend watcher loop...');
-  
-  // Initial population of the set so we don't invite existing friends on startup
   const initialFollowers = await fetchFollowers(authflow);
   initialFollowers.forEach(f => knownFriendXuids.add(f.xuid));
-  console.log(`[Friends] Loaded ${knownFriendXuids.size} existing followers. Watching for new ones...`);
+  console.log(`[Friends] Loaded ${knownFriendXuids.size} existing followers. Watching...`);
 
   while (true) {
     await delay(CHECK_INTERVAL_MS, CHECK_INTERVAL_MS + 5000);
@@ -88,8 +90,7 @@ async function watchForNewFriends(authflow, serverHost, serverPort) {
 
     for (const follower of currentFollowers) {
       if (!knownFriendXuids.has(follower.xuid)) {
-        // New friend detected!
-        console.log(`👋 New friend detected: ${follower.gamertag || follower.displayName} (${follower.xuid})`);
+        console.log(`👋 New friend detected: ${follower.gamertag || follower.displayName}`);
         knownFriendXuids.add(follower.xuid);
         await sendInvite(authflow, follower.xuid, follower.gamertag || follower.displayName, serverHost, serverPort);
       }
@@ -116,7 +117,9 @@ function runBedrockBot(email, host, port) {
     let client = null;
     let reconnectAttempts = 0;
     let isIntentionallyDisconnected = false;
-    const authflow = new Authflow(email, './auth-cache', { flow: 'msal' });
+    
+    // Use the corrected auth flow
+    const authflow = createAuthflow(email);
 
     const startBot = async () => {
       const tag = `[${email}@${host}]`;
@@ -139,13 +142,11 @@ function runBedrockBot(email, host, port) {
         client.on('join', async () => {
           console.log(`${tag} ✅ spawned and joined the game.`);
           
-          // Start the friend watcher in the background
           if (!client.friendWatcherStarted) {
             client.friendWatcherStarted = true;
             watchForNewFriends(authflow, host, port).catch(err => console.error('Watcher error:', err));
           }
 
-          // Start AFK loop
           const endTime = Date.now() + SESSION_MINUTES * 60 * 1000;
           while (Date.now() < endTime && client && !isIntentionallyDisconnected) {
             await doAFKAction(client);

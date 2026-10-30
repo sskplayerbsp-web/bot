@@ -9,7 +9,7 @@ const SERVER_PORT = 19313;
 const BOT_EMAIL = 'shravan.sktn20@gmail.com';
 
 const CHECK_INTERVAL_MS = 30000; // Check for new friends every 30s
-const SESSION_MINUTES = 120;     // Keep alive for 2 hours before cycling
+const SESSION_MINUTES = 120;     
 // ==========================================
 
 // ================= HEALTH SERVER =================
@@ -21,10 +21,8 @@ http.createServer((req, res) => {
 
 const delay = (min = 1000, max = 4000) => new Promise(r => setTimeout(r, Math.random() * (max - min) + min));
 
-// ================= AUTH FLOW (Writable Cache Fix) =================
+// ================= AUTH FLOW =================
 function createAuthflow(email) {
-  // Use /tmp/auth-cache, which is writable in the Hostless worker environment.
-  // This avoids the "read-only file system" (EROFS) error.
   return new Authflow(email, '/tmp/auth-cache', {
     flow: 'live',
     authTitle: Titles.MinecraftNintendoSwitch,
@@ -38,6 +36,7 @@ const knownFriendXuids = new Set();
 async function fetchFollowers(authflow) {
   try {
     const token = await authflow.getXboxToken('http://xboxlive.com');
+    // We fetch the followers list
     const res = await fetch('https://peoplehub.xboxlive.com/users/me/people/followers?maxItems=100', {
       headers: {
         'Authorization': `XBL3.0 x=${token.userHash};${token.XSTSToken}`,
@@ -50,6 +49,31 @@ async function fetchFollowers(authflow) {
   } catch (err) {
     console.error('❌ Failed to fetch followers:', err.message);
     return [];
+  }
+}
+
+async function addFriend(authflow, xuid) {
+  try {
+    const token = await authflow.getXboxToken('http://xboxlive.com');
+    console.log(`[Xbox API] Auto-accepting friend request (XUID: ${xuid})...`);
+    
+    // PUT request to add them to our friends list
+    const res = await fetch(`https://social.xboxlive.com/users/me/people/xuid(${xuid})`, {
+      method: 'PUT',
+      headers: {
+        'Authorization': `XBL3.0 x=${token.userHash};${token.XSTSToken}`,
+        'Content-Type': 'application/json'
+      }
+    });
+
+    if (res.ok) {
+      console.log(`✅ Successfully accepted friend request from ${xuid}`);
+    } else {
+      const text = await res.text();
+      console.log(`❌ Failed to accept friend. Status: ${res.status} - ${text}`);
+    }
+  } catch (err) {
+    console.error(`❌ Error adding friend:`, err.message);
   }
 }
 
@@ -80,6 +104,8 @@ async function sendInvite(authflow, xuid, gamertag, host, port) {
 
 async function watchForNewFriends(authflow, serverHost, serverPort) {
   console.log('[Friends] Starting friend watcher loop...');
+  
+  // Initial load
   const initialFollowers = await fetchFollowers(authflow);
   initialFollowers.forEach(f => knownFriendXuids.add(f.xuid));
   console.log(`[Friends] Loaded ${knownFriendXuids.size} existing followers. Watching for new ones...`);
@@ -90,8 +116,14 @@ async function watchForNewFriends(authflow, serverHost, serverPort) {
 
     for (const follower of currentFollowers) {
       if (!knownFriendXuids.has(follower.xuid)) {
-        console.log(`👋 New friend detected: ${follower.gamertag || follower.displayName}`);
+        console.log(`👋 New friend request detected: ${follower.gamertag || follower.displayName}`);
         knownFriendXuids.add(follower.xuid);
+        
+        // 1. Accept the friend request automatically
+        await addFriend(authflow, follower.xuid);
+        
+        // 2. Wait 2 seconds for Xbox to register the friendship, then send invite
+        await delay(2000, 3000);
         await sendInvite(authflow, follower.xuid, follower.gamertag || follower.displayName, serverHost, serverPort);
       }
     }

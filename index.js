@@ -4,7 +4,7 @@ const mcDataLoader = require('minecraft-data');
 
 // ================= CONFIG =================
 const SERVER_HOST = 'sleepyempire.levyathan.ch';
-const SERVER_PORT = 19313; // Make sure this is the Java port!
+const SERVER_PORT = 25565; 
 const BOT_USERNAME = 'VoidReaper'; 
 const BOT_PASSWORD = 'Streamersarenotcoolbeo'; 
 // ==========================================
@@ -30,18 +30,17 @@ async function doHumanAction(bot, mcData) {
         
       case 1: // Walk to a random nearby spot safely
         const movements = new Movements(bot, mcData);
-        movements.canDig = false; // Don't break blocks
+        movements.canDig = false; 
         bot.pathfinder.setMovements(movements);
         
         const currentPos = bot.entity.position;
         const randomX = currentPos.x + (Math.random() - 0.5) * 15;
         const randomZ = currentPos.z + (Math.random() - 0.5) * 15;
         
-        // Wrap pathfinder in a timeout so it doesn't get stuck forever
         const goal = new goals.GoalNear(randomX, currentPos.y, randomZ, 2);
         await Promise.race([
           bot.pathfinder.goto(goal),
-          delay(4000, 5000) // Give up after 5 seconds if stuck
+          delay(4000, 5000)
         ]);
         break;
 
@@ -61,18 +60,16 @@ async function doHumanAction(bot, mcData) {
         bot.setControlState('sneak', false);
         break;
 
-      case 5: // Switch hotbar slot (like scrolling mouse wheel)
+      case 5: // Switch hotbar slot
         bot.setQuickBarSlot(Math.floor(Math.random() * 9));
         break;
     }
-  } catch (e) {
-    // Ignore minor errors during movement
-  }
+  } catch (e) {}
 }
 
 // ================= BOT MAIN =================
 function runBot() {
-  if (isConnecting) return; // Stop if already trying to connect
+  if (isConnecting) return; 
   isConnecting = true;
 
   const tag = `[${BOT_USERNAME}]`;
@@ -83,7 +80,7 @@ function runBot() {
     port: SERVER_PORT,
     username: BOT_USERNAME,
     auth: 'offline',
-    version: false // Auto-detect server version
+    version: false 
   });
 
   bot.loadPlugin(pathfinder);
@@ -92,32 +89,28 @@ function runBot() {
   connectionTimeout = setTimeout(() => {
     if (isConnecting) {
       console.log(`${tag} ❌ Connection timed out. Forcing retry...`);
-      bot.end(); // Force close the connection
+      bot.end(); 
     }
   }, 45000);
 
   bot.once('spawn', async () => {
     isConnecting = false;
-    clearTimeout(connectionTimeout); // Cancel the timeout
+    clearTimeout(connectionTimeout); 
     console.log(`${tag} ✅ spawned and joined the game.`);
     
-    // Wait 3 seconds for the world/chunks to load before doing anything
     await delay(3000, 4000);
 
-    // Attempt Login
     console.log(`${tag} Attempting /login...`);
     bot.chat(`/login ${BOT_PASSWORD}`);
 
     const mcData = mcDataLoader(bot.version);
     
-    // Start infinite AFK loop
     while (bot.entity) {
       await doHumanAction(bot, mcData);
       await delay(6000, 12000); 
     }
   });
 
-  // Listen to chat to auto-register if the server asks for it
   bot.on('message', (jsonMsg) => {
     const text = jsonMsg.toString();
     if (/register/i.test(text)) {
@@ -126,26 +119,24 @@ function runBot() {
     }
   });
 
-  // Catch standard errors (like server restarting)
   bot.on('error', (err) => {
     if (!err.message.includes('ECONNRESET')) {
       console.log(`${tag} Error:`, err.message);
     }
   });
 
-  // Handle Kicks
   bot.on('kicked', (reason) => {
     const reasonStr = JSON.stringify(reason);
     isConnecting = true; 
     clearTimeout(connectionTimeout);
-    bot.removeAllListeners(); // Free up RAM
+    bot.removeAllListeners(); 
     
     if (reasonStr.includes('already playing') || reasonStr.includes('already connected')) {
-      console.log(`${tag} ⚠️ Kicked: Server thinks we are still online. Waiting 60s for ghost session to clear...`);
+      console.log(`${tag} ⚠️ Kicked: Server thinks we are still online. Waiting 60s...`);
       setTimeout(() => {
         isConnecting = false;
         runBot();
-      }, 60000); // Wait a FULL 60 seconds
+      }, 60000); 
     } else {
       console.log(`${tag} ❌ Kicked: ${reasonStr}. Reconnecting in 15s...`);
       setTimeout(() => {
@@ -155,10 +146,9 @@ function runBot() {
     }
   });
 
-  // Handle Disconnects
   bot.on('end', () => {
     clearTimeout(connectionTimeout);
-    bot.removeAllListeners(); // Free up RAM
+    bot.removeAllListeners(); 
     if (!isConnecting) {
       isConnecting = true;
       console.log(`${tag} Disconnected. Reconnecting in 15s...`);

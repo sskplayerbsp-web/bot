@@ -5,10 +5,10 @@ const mcDataLoader = require('minecraft-data');
 // ================= CONFIG =================
 const BOT_PASSWORD = 'Streamersarenotcoolbeo'; 
 
-// Both are Java servers on port 25565
+// Changed usernames slightly to bypass the ghost session lock
 const SERVERS = [
-  { host: 'sleepyempire.levyathan.ch', port: 25565, username: 'VoidReaper' },
-  { host: 'sleepy.levyathan.ch',       port: 25565, username: 'VoidReaper2' } 
+  { host: 'sleepyempire.levyathan.ch', port: 25565, username: 'VoidReaper_01' },
+  { host: 'sleepy.levyathan.ch',       port: 25565, username: 'VoidReaper_02' } 
 ];
 // ==========================================
 
@@ -37,7 +37,6 @@ async function doHumanAction(bot, mcData) {
         const randomZ = currentPos.z + (Math.random() - 0.5) * 15;
         
         const goal = new goals.GoalNear(randomX, currentPos.y, randomZ, 2);
-        // Give up walking if it takes more than 5 seconds
         await Promise.race([ bot.pathfinder.goto(goal), delay(4000, 5000) ]);
         break;
 
@@ -86,7 +85,6 @@ function startBot(config) {
 
     bot.loadPlugin(pathfinder);
 
-    // Force a timeout if the bot takes more than 45 seconds to spawn
     connectionTimeout = setTimeout(() => {
       if (isConnecting) {
         console.log(`${tag} ❌ Connection timed out. Forcing retry...`);
@@ -133,8 +131,9 @@ function startBot(config) {
       bot.removeAllListeners(); 
       
       if (reasonStr.includes('already playing') || reasonStr.includes('already connected')) {
-        console.log(`${tag} ⚠️ Kicked: Ghost session. Waiting 60s...`);
-        setTimeout(() => { isConnecting = false; run(); }, 60000); 
+        // WAIT 3 MINUTES (180,000 ms) for the server to clear the ghost session
+        console.log(`${tag} ⚠️ Kicked: Ghost session. Waiting 3 minutes...`);
+        setTimeout(() => { isConnecting = false; run(); }, 180000); 
       } else {
         console.log(`${tag} ❌ Kicked: ${reasonStr}. Reconnecting in 15s...`);
         setTimeout(() => { isConnecting = false; run(); }, 15000);
@@ -152,12 +151,11 @@ function startBot(config) {
     });
   };
 
-  run(); // Start the specific bot
+  run(); 
 }
 
 // ================= START ALL BOTS =================
 console.log(`Starting ${SERVERS.length} independent bots...`);
 SERVERS.forEach((server, index) => {
-  // Stagger the connections so they don't login at the exact same millisecond
   setTimeout(() => startBot(server), index * 3000);
 });

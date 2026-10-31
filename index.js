@@ -1,155 +1,77 @@
-console.log("🚀 SCRIPT STARTING - If you see this, Node is running!");
-
-process.on('uncaughtException', (err) => {
-  console.error('❌ CRITICAL ERROR:', err.message);
-});
-process.on('unhandledRejection', (reason) => {
-  console.error('❌ CRITICAL PROMISE ERROR:', reason);
-});
+console.log("Starting Simple Bot...");
 
 const mineflayer = require('mineflayer');
 const { pathfinder, Movements, goals } = require('mineflayer-pathfinder');
 const mcDataLoader = require('minecraft-data');
 
 // ================= CONFIG =================
-const BOT_PASSWORD = 'Streamersarenotcoolbeo'; 
-const SERVERS = [
-  { host: 'sleepyempire.levyathan.ch', port: 25565, username: 'SkyBot_1' },
-  { host: 'sleepy.levyathan.ch',       port: 25565, username: 'SkyBot_2' } 
-];
+const HOST = 'sleepyempire.levyathan.ch';
+const PORT = 25565;
+const USERNAME = 'SkyBot'; // Make sure this name is registered
+const PASSWORD = 'Streamersarenotcoolbeo'; 
 // ==========================================
 
-const delay = (min = 1000, max = 4000) => new Promise(r => setTimeout(r, Math.random() * (max - min) + min));
+function connectBot() {
+  console.log("Connecting to server...");
 
-async function doHumanAction(bot, mcData) {
-  if (!bot.entity || !bot.entity.position) return;
-  const action = Math.floor(Math.random() * 6);
-  try {
-    switch (action) {
-      case 0: 
-        await bot.look(bot.entity.yaw + (Math.random() - 0.5) * 2, (Math.random() - 0.5) * 1.5, false); 
-        break;
-      case 1: 
-        const movements = new Movements(bot, mcData); 
-        movements.canDig = false; 
-        bot.pathfinder.setMovements(movements);
-        const p = bot.entity.position;
-        await Promise.race([ 
-          bot.pathfinder.goto(new goals.GoalNear(p.x + (Math.random() - 0.5) * 15, p.y, p.z + (Math.random() - 0.5) * 15, 2)), 
-          delay(4000, 5000) 
-        ]);
-        break;
-      case 2: 
-        bot.setControlState('jump', true); 
-        await delay(200, 400); 
-        bot.setControlState('jump', false); 
-        break;
-      case 3: 
-        bot.swingArm('right'); 
-        break;
-      case 4: 
-        bot.setControlState('sneak', true); 
-        await delay(500, 1500); 
-        bot.setControlState('sneak', false); 
-        break;
-      case 5: 
-        bot.setQuickBarSlot(Math.floor(Math.random() * 9)); 
-        break;
-    }
-  } catch (e) {}
+  const bot = mineflayer.createBot({
+    host: HOST,
+    port: PORT,
+    username: USERNAME,
+    auth: 'offline'
+  });
+
+  bot.loadPlugin(pathfinder);
+
+  // When the bot joins the server
+  bot.once('spawn', async () => {
+    console.log("✅ Bot joined the game!");
+    
+    // Wait 3 seconds for the server to load
+    setTimeout(() => {
+      console.log("Sending /login command...");
+      bot.chat(`/login ${PASSWORD}`);
+    }, 3000);
+
+    const mcData = mcDataLoader(bot.version);
+
+    // Simple loop: Every 8 seconds, do something
+    setInterval(() => {
+      if (!bot.entity) return;
+
+      const action = Math.floor(Math.random() * 3);
+      try {
+        if (action === 0) {
+          // Look around
+          bot.look(bot.entity.yaw + 1, 0, false);
+        } else if (action === 1) {
+          // Jump
+          bot.setControlState('jump', true);
+          setTimeout(() => bot.setControlState('jump', false), 500);
+        } else if (action === 2) {
+          // Walk randomly
+          const movements = new Movements(bot, mcData);
+          bot.pathfinder.setMovements(movements);
+          const pos = bot.entity.position;
+          const goal = new goals.GoalNear(pos.x + (Math.random() - 0.5) * 10, pos.y, pos.z + (Math.random() - 0.5) * 10, 2);
+          bot.pathfinder.goto(goal).catch(() => {});
+        }
+      } catch (err) {}
+    }, 8000);
+  });
+
+  // Print errors to console
+  bot.on('error', (err) => {
+    console.log("Bot Error:", err.message);
+  });
+
+  // If the bot gets kicked or disconnects, wait 10 seconds and try again
+  bot.on('end', (reason) => {
+    console.log("Bot disconnected. Reason:", reason);
+    console.log("Reconnecting in 10 seconds...");
+    setTimeout(connectBot, 10000);
+  });
 }
 
-function startBot(config) {
-  let isConnecting = false;
-  let connectionTimeout = null;
-  const tag = `[${config.username}@${config.host}]`;
-
-  const run = () => {
-    if (isConnecting) return;
-    isConnecting = true;
-
-    console.log(`\n${tag} Attempting to connect...`);
-
-    try {
-      const bot = mineflayer.createBot({
-        host: config.host, 
-        port: config.port, 
-        username: config.username, 
-        auth: 'offline', 
-        version: false 
-      });
-
-      bot.loadPlugin(pathfinder);
-
-      connectionTimeout = setTimeout(() => {
-        if (isConnecting) { 
-          console.log(`${tag} ❌ Connection timed out.`); 
-          bot.end(); 
-        }
-      }, 45000);
-
-      bot.once('spawn', async () => {
-        isConnecting = false;
-        clearTimeout(connectionTimeout); 
-        console.log(`${tag} ✅ spawned and joined the game.`);
-        
-        await delay(3000, 4000);
-        console.log(`${tag} Attempting /login...`);
-        bot.chat(`/login ${BOT_PASSWORD}`);
-        
-        const mcData = mcDataLoader(bot.version);
-        while (bot.entity) { 
-          await doHumanAction(bot, mcData); 
-          await delay(6000, 12000); 
-        }
-      });
-
-      bot.on('message', (jsonMsg) => {
-        const text = jsonMsg.toString();
-        if (/register/i.test(text)) {
-          bot.chat(`/register ${BOT_PASSWORD} ${BOT_PASSWORD}`);
-        }
-      });
-
-      bot.on('error', (err) => {
-        if (!err.message.includes('ECONNRESET')) console.log(`${tag} Error:`, err.message);
-      });
-      
-      bot.on('kicked', (reason) => {
-        const reasonStr = JSON.stringify(reason);
-        isConnecting = true; 
-        clearTimeout(connectionTimeout); 
-        bot.removeAllListeners(); 
-        
-        if (reasonStr.includes('already playing') || reasonStr.includes('already connected')) {
-          console.log(`${tag} ⚠️ Ghost session. Waiting 5 mins...`);
-          setTimeout(() => { isConnecting = false; run(); }, 300000); 
-        } else {
-          console.log(`${tag} ❌ Kicked: ${reasonStr}. Reconnecting in 15s...`);
-          setTimeout(() => { isConnecting = false; run(); }, 15000);
-        }
-      });
-
-      bot.on('end', () => {
-        clearTimeout(connectionTimeout); 
-        bot.removeAllListeners(); 
-        if (!isConnecting) {
-          isConnecting = true; 
-          console.log(`${tag} Disconnected. Reconnecting in 15s...`);
-          setTimeout(() => { isConnecting = false; run(); }, 15000);
-        }
-      });
-
-    } catch (err) {
-      console.log(`❌ Failed to create bot:`, err.message);
-      isConnecting = false;
-      setTimeout(run, 15000);
-    }
-  };
-  run(); 
-}
-
-console.log(`Starting ${SERVERS.length} independent bots...`);
-SERVERS.forEach((server, index) => { 
-  setTimeout(() => startBot(server), index * 3000); 
-});
+// Start the bot
+connectBot();

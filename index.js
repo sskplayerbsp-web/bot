@@ -5,10 +5,10 @@ const mcDataLoader = require('minecraft-data');
 // ================= CONFIG =================
 const BOT_PASSWORD = 'Streamersarenotcoolbeo'; 
 
-// Changed usernames slightly to bypass the ghost session lock
+// NEW NAMES to bypass the old banned UUIDs and ghost sessions
 const SERVERS = [
-  { host: 'sleepyempire.levyathan.ch', port: 25565, username: 'VoidReaper_01' },
-  { host: 'sleepy.levyathan.ch',       port: 25565, username: 'VoidReaper_02' } 
+  { host: 'sleepyempire.levyathan.ch', port: 25565, username: 'SkyBot_1' },
+  { host: 'sleepy.levyathan.ch',       port: 25565, username: 'SkyBot_2' } 
 ];
 // ==========================================
 
@@ -131,9 +131,9 @@ function startBot(config) {
       bot.removeAllListeners(); 
       
       if (reasonStr.includes('already playing') || reasonStr.includes('already connected')) {
-        // WAIT 3 MINUTES (180,000 ms) for the server to clear the ghost session
-        console.log(`${tag} ⚠️ Kicked: Ghost session. Waiting 3 minutes...`);
-        setTimeout(() => { isConnecting = false; run(); }, 180000); 
+        // MASSIVE 5-MINUTE DELAY to ensure Hostless kills old duplicates and server clears ghost session
+        console.log(`${tag} ⚠️ Kicked: Ghost session detected. Waiting 5 minutes...`);
+        setTimeout(() => { isConnecting = false; run(); }, 300000); 
       } else {
         console.log(`${tag} ❌ Kicked: ${reasonStr}. Reconnecting in 15s...`);
         setTimeout(() => { isConnecting = false; run(); }, 15000);

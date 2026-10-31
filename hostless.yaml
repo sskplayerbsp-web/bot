@@ -1,17 +1,9 @@
 build:
+  command: "npm install --no-audit --no-fund"
   system: auto
-  command: "npm ci"
-  min_cpu: 0.5
-  max_cpu: 2
-  min_memory: 512
-  max_memory: 2048
 
 start_command: "npm start"
 
 scaling:
   min_replicas: 1
   max_replicas: 1
-
-health_check:
-  type: tcp
-  interval_in_seconds: 60

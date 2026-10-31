@@ -1,5 +1,5 @@
 build:
-  command: "npm install --no-audit --no-fund"
+  command: "npm install"
   system: auto
 
 start_command: "npm start"

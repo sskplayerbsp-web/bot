@@ -1,5 +1,5 @@
 {
-  "name": "java-afk-bot",
+  "name": "afk-bot",
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {

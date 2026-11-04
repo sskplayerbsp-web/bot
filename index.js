@@ -20,7 +20,7 @@ const ACCOUNT_PASSWORD = 'Streamersarenotcoolbeo';
 const GAME_VERSION = '1.21.1'; 
 
 const SERVERS = [
-  { host: 'sleepyempire.levyathan.ch', port: 25565, username: 'Liam_Miller' },
+  { host: 'sleepy.mcwhost.de:25620', port: 25565, username: 'Liam_Miller' },
   { host: 'sleepy.levyathan.ch',       port: 25565, username: 'Noah_Davis' } 
 ];
 

@@ -1,4 +1,12 @@
-console.log("🚀 STARTING HUMAN BOTS...");
+console.log("🚀 STARTING HUMAN BOTS (Crash-Proof Version)...");
+
+// 🛑 PREVENT THE WHOLE APP FROM CRASHING ON NETWORK ERRORS
+process.on('uncaughtException', (err) => {
+  console.log('❌ Caught Exception:', err.message);
+});
+process.on('unhandledRejection', (reason) => {
+  console.log('❌ Unhandled Promise Rejection:', reason);
+});
 
 const mineflayer = require('mineflayer');
 const { pathfinder, Movements, goals } = require('mineflayer-pathfinder');
@@ -6,6 +14,9 @@ const mcDataLoader = require('minecraft-data');
 
 // ================= CONFIG =================
 const BOT_PASSWORD = 'Streamersarenotcoolbeo'; 
+
+// 🛑 SET YOUR SERVER VERSION HERE (stops the ping crash)
+const MINECRAFT_VERSION = '1.21.1'; 
 
 const SERVERS = [
   { host: 'sleepyempire.levyathan.ch', port: 25565, username: 'SkyBot_1' },
@@ -62,10 +73,11 @@ async function doHumanAction(bot, mcData) {
         await delay(1000, 3000);
         break;
       case 7: 
-        if (Math.random() < 0.2) {
+        const playerCount = Object.keys(bot.players).length;
+        if (playerCount > 1 && Math.random() < 0.3) { 
           const msg = CHAT_MESSAGES[Math.floor(Math.random() * CHAT_MESSAGES.length)];
           bot.chat(msg);
-          console.log(`[${bot.username}] Sent chat: ${msg}`);
+          console.log(`[${bot.username}] Sent chat (${playerCount} players online): ${msg}`);
         }
         break;
     }
@@ -83,16 +95,23 @@ function startBot(config) {
     isConnecting = true;
     isKicked = false;
 
-    // 🚨 THIS LOG WILL PROVE IF HOSTLESS IS TRYING TO CONNECT TO THE 2ND SERVER
     console.log(`\n🎯 INITIALIZING ${tag}...`);
 
-    const bot = mineflayer.createBot({
-      host: config.host,
-      port: config.port,
-      username: config.username,
-      auth: 'offline',
-      version: false 
-    });
+    let bot;
+    try {
+      bot = mineflayer.createBot({
+        host: config.host,
+        port: config.port,
+        username: config.username,
+        auth: 'offline',
+        version: MINECRAFT_VERSION // 🛑 Using hardcoded version to stop ping crash
+      });
+    } catch (err) {
+      console.log(`❌ ${tag} Failed to create bot instance:`, err.message);
+      isConnecting = false;
+      setTimeout(run, 30000);
+      return;
+    }
 
     bot.loadPlugin(pathfinder);
 
@@ -130,7 +149,8 @@ function startBot(config) {
     });
 
     bot.on('error', (err) => {
-      if (!err.message.includes('ECONNRESET')) {
+      // Ignore standard disconnect/reset errors to prevent console spam
+      if (!err.message.includes('ECONNRESET') && !err.message.includes('ETIMEDOUT')) {
         console.log(`⚠️ ${tag} Error:`, err.message);
       }
     });
@@ -157,7 +177,7 @@ function startBot(config) {
       
       if (!isKicked && !isConnecting) {
         isConnecting = true;
-        console.log(`🔌 ${tag} Disconnected unexpectedly. Reconnecting in 30s...`);
+        console.log(`🔌 ${tag} Disconnected. Reconnecting in 30s...`);
         setTimeout(() => { isConnecting = false; run(); }, 30000);
       }
     });

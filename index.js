@@ -1,4 +1,4 @@
-console.log("🚀 STARTING HUMAN BOTS (Crash-Proof Version)...");
+console.log("🚀 STARTING HUMAN BOTS (Version 26.1)...");
 
 // 🛑 PREVENT THE WHOLE APP FROM CRASHING ON NETWORK ERRORS
 process.on('uncaughtException', (err) => {
@@ -15,8 +15,8 @@ const mcDataLoader = require('minecraft-data');
 // ================= CONFIG =================
 const BOT_PASSWORD = 'Streamersarenotcoolbeo'; 
 
-// 🛑 SET YOUR SERVER VERSION HERE (stops the ping crash)
-const MINECRAFT_VERSION = '1.21.1'; 
+// 🛑 EXACT VERSION 26.1 AS REQUESTED
+const MINECRAFT_VERSION = '26.1'; 
 
 const SERVERS = [
   { host: 'sleepyempire.levyathan.ch', port: 25565, username: 'SkyBot_1' },
@@ -39,40 +39,50 @@ async function doHumanAction(bot, mcData) {
   try {
     switch (action) {
       case 0: 
+        // Look around smoothly
         const yaw = bot.entity.yaw + (Math.random() - 0.5) * 2;
         const pitch = (Math.random() - 0.5) * 1.5;
         await bot.look(yaw, pitch, false);
         break;
       case 1: 
-        const movements = new Movements(bot, mcData);
-        movements.canDig = false; 
-        bot.pathfinder.setMovements(movements);
-        const pos = bot.entity.position;
-        const randomX = pos.x + (Math.random() - 0.5) * 15;
-        const randomZ = pos.z + (Math.random() - 0.5) * 15;
-        const goal = new goals.GoalNear(randomX, pos.y, randomZ, 2);
-        await Promise.race([ bot.pathfinder.goto(goal), delay(4000, 5000) ]);
+        // Walk to a nearby spot
+        if (mcData) {
+          const movements = new Movements(bot, mcData);
+          movements.canDig = false; 
+          bot.pathfinder.setMovements(movements);
+          const pos = bot.entity.position;
+          const randomX = pos.x + (Math.random() - 0.5) * 15;
+          const randomZ = pos.z + (Math.random() - 0.5) * 15;
+          const goal = new goals.GoalNear(randomX, pos.y, randomZ, 2);
+          await Promise.race([ bot.pathfinder.goto(goal), delay(4000, 5000) ]);
+        }
         break;
       case 2: 
+        // Jump
         bot.setControlState('jump', true);
         await delay(200, 400);
         bot.setControlState('jump', false);
         break;
       case 3: 
+        // Swing arm
         bot.swingArm('right');
         break;
       case 4: 
+        // Sneak
         bot.setControlState('sneak', true);
         await delay(500, 1500);
         bot.setControlState('sneak', false);
         break;
       case 5: 
+        // Switch hotbar
         bot.setQuickBarSlot(Math.floor(Math.random() * 9));
         break;
       case 6: 
+        // Stand still and look
         await delay(1000, 3000);
         break;
       case 7: 
+        // Chat only if someone else is online
         const playerCount = Object.keys(bot.players).length;
         if (playerCount > 1 && Math.random() < 0.3) { 
           const msg = CHAT_MESSAGES[Math.floor(Math.random() * CHAT_MESSAGES.length)];
@@ -104,10 +114,10 @@ function startBot(config) {
         port: config.port,
         username: config.username,
         auth: 'offline',
-        version: MINECRAFT_VERSION // 🛑 Using hardcoded version to stop ping crash
+        version: MINECRAFT_VERSION // 🛑 Using 26.1
       });
     } catch (err) {
-      console.log(`❌ ${tag} Failed to create bot instance:`, err.message);
+      console.log(`❌ ${tag} Failed to create bot instance (Possibly wrong version?):`, err.message);
       isConnecting = false;
       setTimeout(run, 30000);
       return;
@@ -132,7 +142,13 @@ function startBot(config) {
       console.log(`🔑 ${tag} Attempting /login...`);
       bot.chat(`/login ${BOT_PASSWORD}`);
 
-      const mcData = mcDataLoader(bot.version);
+      let mcData;
+      try {
+        mcData = mcDataLoader(bot.version);
+      } catch (e) {
+        console.log(`⚠️ Could not load pathfinding data for version ${bot.version}. Basic actions only.`);
+        mcData = null;
+      }
       
       while (bot.entity) {
         await doHumanAction(bot, mcData);
@@ -149,7 +165,6 @@ function startBot(config) {
     });
 
     bot.on('error', (err) => {
-      // Ignore standard disconnect/reset errors to prevent console spam
       if (!err.message.includes('ECONNRESET') && !err.message.includes('ETIMEDOUT')) {
         console.log(`⚠️ ${tag} Error:`, err.message);
       }

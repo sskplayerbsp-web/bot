@@ -193,4 +193,4 @@ function startPlayer(config) {
 console.log(`Starting ${SERVERS.length} players...`);
 SERVERS.forEach((server, index) => {
   setTimeout(() => startPlayer(server), index * 5000);
-});
+});s

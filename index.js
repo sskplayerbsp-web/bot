@@ -17,8 +17,10 @@ const ACCOUNT_PASSWORD = 'Streamersarenotcoolbeo';
 const GAME_VERSION = '1.21.1'; // Change this if your server updates
 
 const SERVERS = [
+  // Server 1
   { host: 'sleepyempire.levyathan.ch', port: 25565, username: 'Liam_Miller' },
-  { host: 'sleepy.levyathan.ch',       port: 25565, username: 'Noah_Davis' } 
+  // Server 2 (Updated to mcsh.gg)
+  { host: 'sleepyem.mcsh.gg',          port: 25565, username: 'Noah_Davis' } 
 ];
 // ==========================================
 
@@ -193,4 +195,4 @@ function startPlayer(config) {
 console.log(`Starting ${SERVERS.length} players...`);
 SERVERS.forEach((server, index) => {
   setTimeout(() => startPlayer(server), index * 5000);
-});s
+});

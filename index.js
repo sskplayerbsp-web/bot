@@ -1,7 +1,8 @@
 console.log("🚀 STARTING PLAYERS (No Chat Mode)...");
 
-// 🛑 PREVENT THE WHOLE APP FROM CRASHING
+// 🛑 PREVENT THE WHOLE APP FROM CRASHING & HIDE CUSTOM ITEM ERRORS
 process.on('uncaughtException', (err) => {
+  if (err.message.includes('PartialReadError')) return; // Ignore harmless item parsing errors
   console.log('❌ Caught Exception:', err.message);
 });
 process.on('unhandledRejection', (reason) => {
@@ -16,11 +17,11 @@ const mcDataLoader = require('minecraft-data');
 const ACCOUNT_PASSWORD = 'Streamersarenotcoolbeo'; 
 
 const SERVERS = [
-  // Server 1 - Working perfectly on 1.21.1
+  // Server 1 - Working perfectly
   { host: 'sleepyempire.levyathan.ch', port: 25565, username: 'Liam_Miller', version: '1.21.1' },
   
-  // Server 2 - Set to 1.20.4 to fix the Firework crash. Change this if the server is a different version!
-  { host: 'sleepyem.mcsh.gg',          port: 25565, username: 'Noah_Davis',  version: '26.1' } 
+  // Server 2 - Changed version to 1.21.4. If it still times out, check the server panel for the correct port!
+  { host: 'sleepyem.mcsh.gg',          port: 25565, username: 'Noah_Davis',  version: '1.21.4' } 
 ];
 // ==========================================
 
@@ -92,7 +93,7 @@ function startPlayer(config) {
         port: config.port,
         username: config.username,
         auth: 'offline',
-        version: config.version, // 🛑 Uses the version specified in the list above
+        version: config.version,
         checkTimeoutInterval: 300 * 1000 
       });
     } catch (err) {

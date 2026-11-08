@@ -1,7 +1,8 @@
 console.log("🚀 STARTING PLAYERS (No Chat Mode)...");
 
+// 🛑 PREVENT THE WHOLE APP FROM CRASHING & HIDE HARMLESS ITEM ERRORS
 process.on('uncaughtException', (err) => {
-  if (err.message.includes('PartialReadError')) return; // Ignore harmless custom item errors
+  if (err.message.includes('PartialReadError')) return; 
   console.log('❌ Caught Exception:', err.message);
 });
 process.on('unhandledRejection', (reason) => {
@@ -11,35 +12,20 @@ process.on('unhandledRejection', (reason) => {
 const mineflayer = require('mineflayer');
 const { pathfinder, Movements, goals } = require('mineflayer-pathfinder');
 const mcDataLoader = require('minecraft-data');
-const net = require('net'); // Used for the connection test
 
 // ================= CONFIG =================
 const ACCOUNT_PASSWORD = 'Streamersarenotcoolbeo'; 
 
 const SERVERS = [
-  // Server 1
-  { host: 'sleepyempire.levyathan.ch', port: 25565, username: 'Liam_Miller', version: '1.21.1' },
+  // 1st Server (mcsh.gg)
+  { host: 'sleepyem.mcsh.gg',          port: 25565, username: 'Noah_Davis',  version: '1.21.4' },
   
-  // Server 2
-  { host: 'sleepyem.mcsh.gg',          port: 25565, username: 'Noah_Davis',  version: '1.21.4' } 
+  // 2nd Server (levyathan.ch)
+  { host: 'sleepyempire.levyathan.ch', port: 25565, username: 'Liam_Miller', version: '1.21.1' }
 ];
 // ==========================================
 
 const delay = (min = 1000, max = 4000) => new Promise(r => setTimeout(r, Math.random() * (max - min) + min));
-
-// 🛑 RAW TCP TEST
-function testServerConnection(host, port) {
-  return new Promise((resolve) => {
-    const socket = new net.Socket();
-    socket.setTimeout(5000); // 5 second limit
-    
-    socket.on('connect', () => { socket.destroy(); resolve(true); });
-    socket.on('timeout', () => { socket.destroy(); resolve(false); });
-    socket.on('error', () => { socket.destroy(); resolve(false); });
-    
-    socket.connect(port, host);
-  });
-}
 
 async function performHumanAction(client, mcData) {
   if (!client.entity || !client.entity.position) return;
@@ -48,11 +34,13 @@ async function performHumanAction(client, mcData) {
   try {
     switch (action) {
       case 0: 
+        // Look around smoothly
         const yaw = client.entity.yaw + (Math.random() - 0.5) * 2;
         const pitch = (Math.random() - 0.5) * 1.5;
         await client.look(yaw, pitch, false);
         break;
       case 1: 
+        // Walk to a random nearby spot safely
         if (mcData) {
           const movements = new Movements(client, mcData);
           movements.canDig = false; 
@@ -65,22 +53,27 @@ async function performHumanAction(client, mcData) {
         }
         break;
       case 2: 
+        // Jump
         client.setControlState('jump', true);
         await delay(200, 400);
         client.setControlState('jump', false);
         break;
       case 3: 
+        // Swing arm
         client.swingArm('right');
         break;
       case 4: 
+        // Sneak
         client.setControlState('sneak', true);
         await delay(500, 1500);
         client.setControlState('sneak', false);
         break;
       case 5: 
+        // Switch hotbar
         client.setQuickBarSlot(Math.floor(Math.random() * 9));
         break;
       case 6: 
+        // Stand still and look (AFK for a moment)
         await delay(1000, 3000);
         break;
     }
@@ -93,23 +86,12 @@ function startPlayer(config) {
   let isKicked = false;
   const tag = `[${config.username}@${config.host}]`;
 
-  const run = async () => {
+  const run = () => {
     if (isConnecting) return;
     isConnecting = true;
     isKicked = false;
 
-    // 🛑 THIS LINE WILL PROVE IF THE CODE UPDATED
-    console.log(`\n🎯 CHECKING NETWORK FOR ${tag}...`);
-
-    const canReachServer = await testServerConnection(config.host, config.port);
-    if (!canReachServer) {
-      console.log(`❌ ${tag} FAILED TO REACH SERVER! Hostless is blocked by the server firewall or the server is offline.`);
-      isConnecting = false;
-      setTimeout(run, 30000); 
-      return; 
-    }
-
-    console.log(`✅ ${tag} Network is reachable! Attempting to log in on version ${config.version}...`);
+    console.log(`\n🎯 INITIALIZING ${tag} on version ${config.version}...`);
 
     let client;
     try {
@@ -119,7 +101,7 @@ function startPlayer(config) {
         username: config.username,
         auth: 'offline',
         version: config.version,
-        checkTimeoutInterval: 300 * 1000 
+        checkTimeoutInterval: 300 * 1000 // 5 minutes
       });
     } catch (err) {
       console.log(`❌ ${tag} Failed to create instance:`, err.message);
@@ -130,6 +112,7 @@ function startPlayer(config) {
 
     client.loadPlugin(pathfinder);
 
+    // Hard timeout to force a retry if it hangs forever
     connectionTimeout = setTimeout(() => {
       if (isConnecting) {
         console.log(`❌ ${tag} Hard timeout after 60s. Forcing retry...`);
@@ -154,6 +137,7 @@ function startPlayer(config) {
         mcData = null;
       }
       
+      // The infinite action loop
       while (client.entity) {
         await performHumanAction(client, mcData);
         await delay(5000, 12000); 
@@ -162,6 +146,7 @@ function startPlayer(config) {
 
     client.on('message', (jsonMsg) => {
       const text = jsonMsg.toString();
+      // Auto-register if it's a brand new name
       if (/register/i.test(text)) {
         console.log(`📝 ${tag} Registering...`);
         client.chat(`/register ${ACCOUNT_PASSWORD} ${ACCOUNT_PASSWORD}`);
@@ -182,7 +167,7 @@ function startPlayer(config) {
       client.removeAllListeners(); 
       
       if (reasonStr.includes('already playing') || reasonStr.includes('already connected')) {
-        console.log(`⚠️ ${tag} Kicked: Ghost session. Waiting 5 minutes...`);
+        console.log(`⚠️ ${tag} Kicked: Ghost session detected. Waiting 5 minutes...`);
         setTimeout(() => { isConnecting = false; run(); }, 300000); 
       } else {
         console.log(`❌ ${tag} Kicked: ${reasonStr}. Reconnecting in 30s...`);

@@ -1,8 +1,7 @@
 console.log("🚀 STARTING PLAYERS (No Chat Mode)...");
 
-// 🛑 PREVENT THE WHOLE APP FROM CRASHING & HIDE CUSTOM ITEM ERRORS
 process.on('uncaughtException', (err) => {
-  if (err.message.includes('PartialReadError')) return; // Ignore harmless item parsing errors
+  if (err.message.includes('PartialReadError')) return; // Ignore harmless custom item errors
   console.log('❌ Caught Exception:', err.message);
 });
 process.on('unhandledRejection', (reason) => {
@@ -12,20 +11,35 @@ process.on('unhandledRejection', (reason) => {
 const mineflayer = require('mineflayer');
 const { pathfinder, Movements, goals } = require('mineflayer-pathfinder');
 const mcDataLoader = require('minecraft-data');
+const net = require('net'); // Used for the connection test
 
 // ================= CONFIG =================
 const ACCOUNT_PASSWORD = 'Streamersarenotcoolbeo'; 
 
 const SERVERS = [
-  // Server 1 - Working perfectly
+  // Server 1
   { host: 'sleepyempire.levyathan.ch', port: 25565, username: 'Liam_Miller', version: '1.21.1' },
   
-  // Server 2 - Changed version to 1.21.4. If it still times out, check the server panel for the correct port!
+  // Server 2
   { host: 'sleepyem.mcsh.gg',          port: 25565, username: 'Noah_Davis',  version: '1.21.4' } 
 ];
 // ==========================================
 
 const delay = (min = 1000, max = 4000) => new Promise(r => setTimeout(r, Math.random() * (max - min) + min));
+
+// 🛑 RAW TCP TEST
+function testServerConnection(host, port) {
+  return new Promise((resolve) => {
+    const socket = new net.Socket();
+    socket.setTimeout(5000); // 5 second limit
+    
+    socket.on('connect', () => { socket.destroy(); resolve(true); });
+    socket.on('timeout', () => { socket.destroy(); resolve(false); });
+    socket.on('error', () => { socket.destroy(); resolve(false); });
+    
+    socket.connect(port, host);
+  });
+}
 
 async function performHumanAction(client, mcData) {
   if (!client.entity || !client.entity.position) return;
@@ -79,12 +93,23 @@ function startPlayer(config) {
   let isKicked = false;
   const tag = `[${config.username}@${config.host}]`;
 
-  const run = () => {
+  const run = async () => {
     if (isConnecting) return;
     isConnecting = true;
     isKicked = false;
 
-    console.log(`\n🎯 INITIALIZING ${tag} on version ${config.version}...`);
+    // 🛑 THIS LINE WILL PROVE IF THE CODE UPDATED
+    console.log(`\n🎯 CHECKING NETWORK FOR ${tag}...`);
+
+    const canReachServer = await testServerConnection(config.host, config.port);
+    if (!canReachServer) {
+      console.log(`❌ ${tag} FAILED TO REACH SERVER! Hostless is blocked by the server firewall or the server is offline.`);
+      isConnecting = false;
+      setTimeout(run, 30000); 
+      return; 
+    }
+
+    console.log(`✅ ${tag} Network is reachable! Attempting to log in on version ${config.version}...`);
 
     let client;
     try {

@@ -20,7 +20,7 @@ const SERVERS = [
   { host: 'sleepyempire.levyathan.ch', port: 25565, username: 'Liam_Miller', version: '1.21.1' },
   
   // Server 2 - Set to 1.20.4 to fix the Firework crash. Change this if the server is a different version!
-  { host: 'sleepyem.mcsh.gg',          port: 25565, username: 'Noah_Davis',  version: '1.20.4' } 
+  { host: 'sleepyem.mcsh.gg',          port: 25565, username: 'Noah_Davis',  version: '26.1' } 
 ];
 // ==========================================
 

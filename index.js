@@ -1,8 +1,8 @@
 console.log("🚀 STARTING PLAYERS (No Chat Mode)...");
 
-// 🛑 PREVENT THE WHOLE APP FROM CRASHING & HIDE HARMLESS ITEM ERRORS
+// 🛑 PREVENT CRASHES & MUTE HARMLESS CUSTOM ITEM ERRORS
 process.on('uncaughtException', (err) => {
-  if (err.message.includes('PartialReadError')) return; 
+  if (err.message.includes('PartialReadError') || err.message.includes('ItemFireworkExplosion')) return;
   console.log('❌ Caught Exception:', err.message);
 });
 process.on('unhandledRejection', (reason) => {
@@ -17,11 +17,11 @@ const mcDataLoader = require('minecraft-data');
 const ACCOUNT_PASSWORD = 'Streamersarenotcoolbeo'; 
 
 const SERVERS = [
-  // 1st Server (mcsh.gg)
-  { host: 'sleepyem.mcsh.gg',          port: 25565, username: 'Noah_Davis',  version: '1.21.4' },
+  // Server 1 (Working)
+  { host: 'sleepyempire.levyathan.ch', port: 25565, username: 'Liam_Miller', version: '1.21.1' },
   
-  // 2nd Server (levyathan.ch)
-  { host: 'sleepyempire.levyathan.ch', port: 25565, username: 'Liam_Miller', version: '1.21.1' }
+  // Server 2 (Sleeping server - takes longer to boot)
+  { host: 'sleepyem.mcsh.gg',          port: 25565, username: 'Noah_Davis',  version: '1.21.4' }
 ];
 // ==========================================
 
@@ -34,13 +34,11 @@ async function performHumanAction(client, mcData) {
   try {
     switch (action) {
       case 0: 
-        // Look around smoothly
         const yaw = client.entity.yaw + (Math.random() - 0.5) * 2;
         const pitch = (Math.random() - 0.5) * 1.5;
         await client.look(yaw, pitch, false);
         break;
       case 1: 
-        // Walk to a random nearby spot safely
         if (mcData) {
           const movements = new Movements(client, mcData);
           movements.canDig = false; 
@@ -53,27 +51,22 @@ async function performHumanAction(client, mcData) {
         }
         break;
       case 2: 
-        // Jump
         client.setControlState('jump', true);
         await delay(200, 400);
         client.setControlState('jump', false);
         break;
       case 3: 
-        // Swing arm
         client.swingArm('right');
         break;
       case 4: 
-        // Sneak
         client.setControlState('sneak', true);
         await delay(500, 1500);
         client.setControlState('sneak', false);
         break;
       case 5: 
-        // Switch hotbar
         client.setQuickBarSlot(Math.floor(Math.random() * 9));
         break;
       case 6: 
-        // Stand still and look (AFK for a moment)
         await delay(1000, 3000);
         break;
     }
@@ -101,7 +94,8 @@ function startPlayer(config) {
         username: config.username,
         auth: 'offline',
         version: config.version,
-        checkTimeoutInterval: 300 * 1000 // 5 minutes
+        // 🛑 INCREASE TIMEOUT TO 3 MINUTES TO ALLOW MCSH.GG TO WAKE UP
+        checkTimeoutInterval: 180 * 1000 
       });
     } catch (err) {
       console.log(`❌ ${tag} Failed to create instance:`, err.message);
@@ -112,13 +106,13 @@ function startPlayer(config) {
 
     client.loadPlugin(pathfinder);
 
-    // Hard timeout to force a retry if it hangs forever
+    // Hard timeout forced to 3 minutes as well
     connectionTimeout = setTimeout(() => {
       if (isConnecting) {
-        console.log(`❌ ${tag} Hard timeout after 60s. Forcing retry...`);
+        console.log(`❌ ${tag} Hard timeout after 3 minutes. Forcing retry...`);
         client.end(); 
       }
-    }, 60000);
+    }, 180000);
 
     client.once('spawn', async () => {
       isConnecting = false;
@@ -137,7 +131,6 @@ function startPlayer(config) {
         mcData = null;
       }
       
-      // The infinite action loop
       while (client.entity) {
         await performHumanAction(client, mcData);
         await delay(5000, 12000); 
@@ -146,7 +139,6 @@ function startPlayer(config) {
 
     client.on('message', (jsonMsg) => {
       const text = jsonMsg.toString();
-      // Auto-register if it's a brand new name
       if (/register/i.test(text)) {
         console.log(`📝 ${tag} Registering...`);
         client.chat(`/register ${ACCOUNT_PASSWORD} ${ACCOUNT_PASSWORD}`);
@@ -166,10 +158,18 @@ function startPlayer(config) {
       clearTimeout(connectionTimeout);
       client.removeAllListeners(); 
       
-      if (reasonStr.includes('already playing') || reasonStr.includes('already connected')) {
+      // 🛑 NEW: Handle the "Server is starting" kick
+      if (reasonStr.includes('starting') || reasonStr.includes('sleeping')) {
+        console.log(`⏳ ${tag} Server is waking up. Retrying in 45 seconds...`);
+        setTimeout(() => { isConnecting = false; run(); }, 45000); 
+      } 
+      // Handle Ghost sessions
+      else if (reasonStr.includes('already playing') || reasonStr.includes('already connected')) {
         console.log(`⚠️ ${tag} Kicked: Ghost session detected. Waiting 5 minutes...`);
         setTimeout(() => { isConnecting = false; run(); }, 300000); 
-      } else {
+      } 
+      // Normal kicks
+      else {
         console.log(`❌ ${tag} Kicked: ${reasonStr}. Reconnecting in 30s...`);
         setTimeout(() => { isConnecting = false; run(); }, 30000);
       }
